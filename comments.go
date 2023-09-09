@@ -2,11 +2,12 @@ package configreader
 
 // -----------------------------------------------------------------------------
 
-func removeComments(data []byte) {
-	state := 0
+func removeComments(data []byte) []byte {
+	var commentStartIndex int
 
 	dataLength := len(data)
 
+	state := 0
 	for index := 0; index < dataLength; index++ {
 		ch := data[index]
 
@@ -18,16 +19,14 @@ func removeComments(data []byte) {
 				if index+1 < dataLength {
 					switch data[index+1] {
 					case '/':
-						state = 2         // Start of single line comment
-						data[index] = ' ' //Remove comment start
+						state = 2 // Start of single line comment
+						commentStartIndex = index
 						index += 1
-						data[index] = ' ' //Remove comment start
 
 					case '*':
-						state = 3         // Start of multiple line comment
-						data[index] = ' ' //Remove comment start
+						state = 3 // Start of multiple line comment
+						commentStartIndex = index
 						index += 1
-						data[index] = ' ' //Remove comment start
 					}
 				}
 			}
@@ -43,20 +42,23 @@ func removeComments(data []byte) {
 
 		case 2: // Single line comment
 			if ch == '\n' {
-				state = 0 // End of single line comment
-			} else {
-				data[index] = ' ' // Remove comment
+				// End of single line comment
+				state = 0
+				copy(data[commentStartIndex:], data[index+1:])
+				dataLength -= (index + 1) - commentStartIndex
 			}
 
 		case 3: // Multi line comment
 			if ch == '*' && index+1 < dataLength && data[index+1] == '/' {
-				state = 0         // End of multi line comment
-				data[index] = ' ' // Remove comment end
+				// End of multi line comment
+				state = 0
 				index += 1
-				data[index] = ' ' // Remove comment end
-			} else {
-				data[index] = ' ' // Remove comment
+				copy(data[commentStartIndex:], data[index+1:])
+				dataLength -= (index + 1) - commentStartIndex
 			}
 		}
 	}
+
+	// Done
+	return data
 }

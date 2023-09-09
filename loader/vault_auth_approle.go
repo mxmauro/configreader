@@ -1,6 +1,7 @@
 package loader
 
 import (
+	"crypto/sha256"
 	"errors"
 
 	"github.com/hashicorp/vault/api"
@@ -13,9 +14,9 @@ import (
 // VaultAppRoleAuth contains the options to access vault with the AppRole authentication mechanism
 type VaultAppRoleAuth struct {
 	roleId      string
-	secretId    *approle.SecretID
-	mountPath   approle.LoginOption
-	unwrapToken approle.LoginOption
+	secretId    string
+	mountPath   string
+	unwrapToken bool
 
 	err error
 }
@@ -30,13 +31,9 @@ func NewVaultAppRoleAuthMethod() *VaultAppRoleAuth {
 // WithRoleId sets the role id
 func (a *VaultAppRoleAuth) WithRoleId(roleId string) *VaultAppRoleAuth {
 	if a.err == nil {
-		var err error
-
-		roleId, err = helpers.LoadAndReplaceEnvs(roleId)
-		if err == nil {
+		roleId, a.err = helpers.LoadAndReplaceEnvs(roleId)
+		if a.err == nil {
 			a.roleId = roleId
-		} else {
-			a.err = err
 		}
 	}
 	return a
@@ -45,19 +42,9 @@ func (a *VaultAppRoleAuth) WithRoleId(roleId string) *VaultAppRoleAuth {
 // WithSecretId sets the secret id
 func (a *VaultAppRoleAuth) WithSecretId(secretId string) *VaultAppRoleAuth {
 	if a.err == nil {
-		var err error
-
-		secretId, err = helpers.LoadAndReplaceEnvs(secretId)
-		if err == nil {
-			if len(secretId) > 0 {
-				a.secretId = &approle.SecretID{
-					FromString: secretId,
-				}
-			} else {
-				a.secretId = nil
-			}
-		} else {
-			a.err = err
+		secretId, a.err = helpers.LoadAndReplaceEnvs(secretId)
+		if a.err == nil {
+			a.secretId = secretId
 		}
 	}
 	return a
@@ -68,13 +55,9 @@ func (a *VaultAppRoleAuth) WithSecretUnwrap(unwrap interface{}) *VaultAppRoleAut
 	if a.err == nil {
 		b, err := helpers.GetBoolEnv(unwrap)
 		if err == nil {
-			if b {
-				a.unwrapToken = approle.WithWrappingToken()
-			} else {
-				a.unwrapToken = nil
-			}
+			a.unwrapToken = b
 		} else if errors.Is(err, helpers.ErrIsNil) {
-			a.unwrapToken = nil
+			a.unwrapToken = false
 		} else {
 			a.err = err
 		}
@@ -85,17 +68,9 @@ func (a *VaultAppRoleAuth) WithSecretUnwrap(unwrap interface{}) *VaultAppRoleAut
 // WithMountPath sets an optional mount path. Defaults to approle
 func (a *VaultAppRoleAuth) WithMountPath(mountPath string) *VaultAppRoleAuth {
 	if a.err == nil {
-		var err error
-
-		mountPath, err = helpers.LoadAndReplaceEnvs(mountPath)
-		if err == nil {
-			if len(mountPath) > 0 {
-				a.mountPath = approle.WithMountPath(mountPath)
-			} else {
-				a.mountPath = nil
-			}
-		} else {
-			a.err = err
+		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		if a.err == nil {
+			a.mountPath = mountPath
 		}
 	}
 	return a
@@ -113,18 +88,34 @@ func (a *VaultAppRoleAuth) create() (api.AuthMethod, error) {
 	}
 
 	// Get secret ID
-	if a.secretId == nil {
+	if len(a.secretId) == 0 {
 		return nil, errors.New("no secretID specified for Vault's AppRole auth")
 	}
 
 	opts := make([]approle.LoginOption, 0)
-	if a.mountPath != nil {
-		opts = append(opts, a.mountPath)
+	if len(a.mountPath) > 0 {
+		opts = append(opts, approle.WithMountPath(a.mountPath))
 	}
-	if a.unwrapToken != nil {
-		opts = append(opts, a.unwrapToken)
+	if a.unwrapToken {
+		opts = append(opts, approle.WithWrappingToken())
 	}
 
 	// Return the authorization wrapper
-	return approle.NewAppRoleAuth(a.roleId, a.secretId, opts...)
+	return approle.NewAppRoleAuth(a.roleId, &approle.SecretID{
+		FromString: a.secretId,
+	}, opts...)
+}
+
+func (a *VaultAppRoleAuth) hash() (res [32]byte) {
+	h := sha256.New()
+	_, _ = h.Write([]byte(a.roleId))
+	_, _ = h.Write([]byte(a.secretId))
+	_, _ = h.Write([]byte(a.mountPath))
+	if a.unwrapToken {
+		_, _ = h.Write([]byte{1})
+	} else {
+		_, _ = h.Write([]byte{0})
+	}
+	copy(res[:], h.Sum(nil))
+	return
 }

@@ -28,7 +28,7 @@ var (
 
 // -----------------------------------------------------------------------------
 
-// Http wraps content to be loaded from a URL
+// Http wraps content to be loaded from an URL
 type Http struct {
 	host string
 	path string
@@ -78,7 +78,7 @@ func (l *Http) WithHost(host string) *Http {
 	return l
 }
 
-// WithPath sets the path
+// WithPath sets the resource path
 func (l *Http) WithPath(path string) *Http {
 	if l.err == nil {
 		path, l.err = helpers.LoadAndReplaceEnvs(path)
@@ -145,16 +145,20 @@ func (l *Http) WithQuery(query map[string]string) *Http {
 // WithQueryItem sets a single query parameter
 func (l *Http) WithQueryItem(key string, value string) *Http {
 	if l.err == nil {
-		var err error
+		if len(key) > 0 {
+			var err error
 
-		value, err = helpers.LoadAndReplaceEnvs(value)
-		if err == nil {
-			if l.query == nil {
-				l.query = make(map[string]string)
+			value, err = helpers.LoadAndReplaceEnvs(value)
+			if err == nil {
+				if l.query == nil {
+					l.query = make(map[string]string)
+				}
+				l.query[key] = value
+			} else {
+				l.err = err
 			}
-			l.query[key] = value
 		} else {
-			l.err = err
+			l.err = errors.New("invalid query parameter")
 		}
 	}
 	return l
@@ -222,12 +226,16 @@ func (l *Http) WithDefaultTLS() *Http {
 // WithTLS sets a tls.Config object
 func (l *Http) WithTLS(tlsConfig *tls.Config) *Http {
 	if l.err == nil {
-		l.tlsConfig = tlsConfig
+		if tlsConfig != nil {
+			l.tlsConfig = tlsConfig.Clone()
+		} else {
+			l.tlsConfig = nil
+		}
 	}
 	return l
 }
 
-// WithUrl sets the options from the provided url
+// WithUrl sets the host, port, path and other settings from the provided url
 func (l *Http) WithUrl(rawURL string) *Http {
 	if l.err == nil {
 		// Parse url
@@ -249,19 +257,20 @@ func (l *Http) WithUrl(rawURL string) *Http {
 
 		_ = l.WithHost(u.Host)
 
+		_ = l.WithPath(u.Path)
+
 		if u.User != nil {
 			password, _ := u.User.Password()
 			_ = l.WithCredentials(u.User.Username(), password)
 		}
 
-		_ = l.WithPath(u.Path)
-
-		l.query = make(map[string]string)
+		query := make(map[string]string)
 		for key, value := range u.Query() {
 			if len(value) > 0 && len(value[0]) != 0 {
-				l.query[key] = value[0]
+				query[key] = value[0]
 			}
 		}
+		l.WithHeaders(query)
 	}
 
 	// Done

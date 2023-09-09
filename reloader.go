@@ -8,10 +8,9 @@ import (
 
 // -----------------------------------------------------------------------------
 
-func (cr *ConfigReader[T]) startReloadPoller(encodedSettings []byte) {
+func (cr *ConfigReader[T]) startReloadPoller(hashOfEncodedSettings [64]byte) {
 	// Create a copy of the encoded settings
-	cr.reloader.encodedSettings = make([]byte, len(encodedSettings))
-	copy(cr.reloader.encodedSettings, encodedSettings)
+	copy(cr.reloader.hashOfEncodedSettings[:], hashOfEncodedSettings[:])
 
 	// Start polling
 	cr.reloader.stopCh = make(chan struct{})
@@ -73,19 +72,19 @@ func (cr *ConfigReader[T]) reloadPoll() {
 
 func (cr *ConfigReader[T]) reload(ctx context.Context) {
 	// Load the whole data
-	settings, encodedSettings, err := cr.load(ctx)
+	settings, hashOfEncodedSettings, err := cr.load(ctx)
 	if err != nil {
 		cr.reloader.callback(nil, err)
 		return
 	}
 
 	// If encoded settings are the same, do nothing
-	if bytes.Equal(encodedSettings, cr.reloader.encodedSettings) {
+	if bytes.Equal(hashOfEncodedSettings[:], cr.reloader.hashOfEncodedSettings[:]) {
 		return
 	}
 
 	// Preserve new encoded settings for future comparison
-	cr.reloader.encodedSettings = encodedSettings
+	copy(cr.reloader.hashOfEncodedSettings[:], hashOfEncodedSettings[:])
 
 	// Call the callback
 	cr.reloader.callback(settings, nil)

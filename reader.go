@@ -2,6 +2,7 @@ package configreader
 
 import (
 	"context"
+	"crypto/sha512"
 	"encoding/json"
 	"errors"
 	"time"
@@ -20,11 +21,11 @@ type ConfigReader[T any] struct {
 	noReplaceEnvVars  bool
 
 	reloader struct {
-		timeout         time.Duration
-		callback        SettingsChangedCallback[T]
-		stopCh          chan struct{}
-		doneCh          chan struct{}
-		encodedSettings []byte
+		timeout               time.Duration
+		callback              SettingsChangedCallback[T]
+		stopCh                chan struct{}
+		doneCh                chan struct{}
+		hashOfEncodedSettings [64]byte
 	}
 
 	err error
@@ -33,6 +34,7 @@ type ConfigReader[T any] struct {
 // ExtendedValidator is a function to call in order to do configuration validation not covered by this library.
 type ExtendedValidator[T any] func(settings *T) error
 
+// SettingsChangedCallback is a function to call when the reloader detects a change in the configuration settings.
 type SettingsChangedCallback[T any] func(settings *T, loadErr error)
 
 //------------------------------------------------------------------------------
@@ -58,7 +60,7 @@ func (cr *ConfigReader[T]) WithSchema(schema string) *ConfigReader[T] {
 	return cr
 }
 
-// WithExtendedValidator sets an optional  settings validator callback
+// WithExtendedValidator sets an optional settings validator callback
 func (cr *ConfigReader[T]) WithExtendedValidator(validator ExtendedValidator[T]) *ConfigReader[T] {
 	if cr.err == nil {
 		cr.extendedValidator = validator
@@ -85,7 +87,7 @@ func (cr *ConfigReader[T]) WithReload(pollInterval time.Duration, callback Setti
 
 // Load settings from the specified source
 func (cr *ConfigReader[T]) Load(ctx context.Context) (*T, error) {
-	var encodedSettings []byte
+	var hashOfEncodedSettings [64]byte
 	var settings *T
 	var err error
 
@@ -105,15 +107,14 @@ func (cr *ConfigReader[T]) Load(ctx context.Context) (*T, error) {
 	}
 
 	// Load the whole data
-	settings, encodedSettings, err = cr.load(ctx)
+	settings, hashOfEncodedSettings, err = cr.load(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Start re-loader goroutine if provided
 	if cr.reloader.callback != nil && cr.reloader.timeout > 0 {
-		cr.startReloadPoller(encodedSettings)
-
+		cr.startReloadPoller(hashOfEncodedSettings)
 	}
 
 	// Done
@@ -125,45 +126,45 @@ func (cr *ConfigReader[T]) Destroy() {
 	cr.stopReloadPoller()
 }
 
-func (cr *ConfigReader[T]) load(ctx context.Context) (*T, []byte, error) {
+func (cr *ConfigReader[T]) load(ctx context.Context) (*T, [64]byte, error) {
 	var settings *T
 
 	// Load the whole data
 	encodedSettings, err := cr.loader.Load(ctx)
 	if err != nil {
-		return nil, nil, newConfigLoadError(err)
+		return nil, [64]byte{}, newConfigLoadError(err)
 	}
 
 	// Replace environment variables inside the resulting json
 	if !cr.noReplaceEnvVars {
 		encodedSettings, err = helpers.LoadAndReplaceEnvsByte(encodedSettings)
 		if err != nil {
-			return nil, nil, newConfigLoadError(err)
+			return nil, [64]byte{}, newConfigLoadError(err)
 		}
 	}
 
 	// Remove comments from json
-	removeComments(encodedSettings)
+	encodedSettings = removeComments(encodedSettings)
 
 	// If resulting configuration is empty, throw error
 	if len(encodedSettings) == 0 {
-		return nil, nil, newConfigLoadError(errors.New("empty data"))
+		return nil, [64]byte{}, newConfigLoadError(errors.New("empty data"))
 	}
 
 	// Do final validation and decoding
 	err = cr.validate(encodedSettings)
 	if err != nil {
-		return nil, nil, newConfigLoadError(err)
+		return nil, [64]byte{}, newConfigLoadError(err)
 	}
 
 	// Do final validation and decoding
 	settings, err = cr.decode(encodedSettings)
 	if err != nil {
-		return nil, nil, newConfigLoadError(err)
+		return nil, [64]byte{}, newConfigLoadError(err)
 	}
 
 	// Done
-	return settings, encodedSettings, nil
+	return settings, sha512.Sum512(encodedSettings), nil
 }
 
 func (cr *ConfigReader[T]) decode(encodedSettings []byte) (*T, error) {
