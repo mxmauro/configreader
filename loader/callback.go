@@ -2,6 +2,7 @@ package loader
 
 import (
 	"context"
+	"errors"
 )
 
 // -----------------------------------------------------------------------------
@@ -28,5 +29,8 @@ func (l *Callback) WithCallback(callback CallbackFunc) *Callback {
 
 // Load loads the content from the callback
 func (l *Callback) Load(ctx context.Context) ([]byte, error) {
+	if l.callback == nil {
+		return nil, errors.New("callback not set")
+	}
 	return l.callback(ctx)
 }

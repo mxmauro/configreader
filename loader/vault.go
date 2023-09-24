@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/hashicorp/vault/api"
@@ -25,7 +24,9 @@ type Vault struct {
 	tlsConfig *tls.Config
 
 	accessToken string
-	auth        api.AuthMethod
+	auth        VaultAuthMethod
+
+	client *vaultClient
 
 	err error
 }
@@ -33,6 +34,7 @@ type Vault struct {
 // VaultAuthMethod is an interface used to set up an authentication mechanism
 type VaultAuthMethod interface {
 	create() (api.AuthMethod, error)
+	hash() [32]byte
 }
 
 // -----------------------------------------------------------------------------
@@ -131,7 +133,11 @@ func (l *Vault) WithDefaultTLS() *Vault {
 // WithTLS sets a tls.Config object
 func (l *Vault) WithTLS(tlsConfig *tls.Config) *Vault {
 	if l.err == nil {
-		l.tlsConfig = tlsConfig
+		if tlsConfig != nil {
+			l.tlsConfig = tlsConfig.Clone()
+		} else {
+			l.tlsConfig = nil
+		}
 	}
 	return l
 }
@@ -140,6 +146,7 @@ func (l *Vault) WithTLS(tlsConfig *tls.Config) *Vault {
 func (l *Vault) WithAccessToken(token string) *Vault {
 	if l.err == nil {
 		l.accessToken = token
+		l.auth = nil
 	}
 	return l
 }
@@ -147,88 +154,36 @@ func (l *Vault) WithAccessToken(token string) *Vault {
 // WithAuth sets the authorization method to use
 func (l *Vault) WithAuth(auth VaultAuthMethod) *Vault {
 	if l.err == nil {
-		if auth != nil {
-			var err error
-
-			l.auth, err = auth.create()
-			if err != nil {
-				l.err = err
-			}
-		} else {
-			l.auth = nil
-		}
+		l.auth = auth
+		l.accessToken = ""
 	}
 	return l
 }
 
-// Load loads the content from the web
+// Load loads the content from Vault
 func (l *Vault) Load(ctx context.Context) ([]byte, error) {
-	var vaultClient *api.Client
 	var secret *api.Secret
 	var buf bytes.Buffer
 	var err error
 
-	// Create the http client object and set up transport
-	client := http.Client{
-		Transport: httpTransport,
+	if l.err != nil {
+		return nil, l.err
 	}
-	if l.tlsConfig != nil {
-		// Clone our default transport
-		t := httpTransport.Clone()
-		t.TLSClientConfig = l.tlsConfig
-
-		client.Transport = t
+	if len(l.path) == 0 {
+		l.err = errors.New("path not set")
+		return nil, l.err
 	}
 
-	vaultCfg := api.Config{
-		MaxRetries: 3,
-		Address:    "http",
-	}
-
-	// Get host
-	if len(l.host) == 0 {
-		return nil, errors.New("host not set")
-	}
-	if l.tlsConfig != nil {
-		vaultCfg.Address += "s"
-	}
-	vaultCfg.Address += "://" + l.host
-
-	// Create Vault client accessor
-	vaultClient, err = api.NewClient(&vaultCfg)
-	if err != nil {
-		return nil, err
-	}
-	// Remove some settings that can be overridden with environment variables
-	vaultClient.SetToken("")
-	vaultClient.SetNamespace("")
-
-	// Add custom headers if provided
-	if len(l.headers) > 0 {
-		for key, value := range l.headers {
-			vaultClient.AddHeader(key, value)
-		}
-	}
-
-	// Get access token
-	if len(l.accessToken) > 0 {
-		// If a token was provided, use it
-		vaultClient.SetToken(l.accessToken)
-	} else if l.auth != nil {
-		// Else attempt to log in using the provided authentication method
-		_, err = vaultClient.Auth().Login(ctx, l.auth)
+	if l.client == nil {
+		l.client, err = newVaultClient(l.host, l.headers, l.tlsConfig, l.accessToken, l.auth)
 		if err != nil {
-			return nil, err
+			l.err = err
+			return nil, l.err
 		}
-	} else {
-		return nil, errors.New("no authorization method was established")
 	}
 
 	// Read secret
-	if len(l.path) == 0 {
-		return nil, errors.New("path not set")
-	}
-	secret, err = vaultClient.Logical().ReadWithContext(ctx, l.path)
+	secret, err = l.client.readWithContext(ctx, l.path)
 	if err != nil {
 		return nil, err
 	}

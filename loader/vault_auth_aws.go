@@ -1,6 +1,7 @@
 package loader
 
 import (
+	"crypto/sha256"
 	"errors"
 
 	"github.com/hashicorp/vault/api"
@@ -22,13 +23,13 @@ const (
 
 // VaultAwsAuth contains the options to access vault with the AWS authentication mechanism
 type VaultAwsAuth struct {
-	role        aws.LoginOption
-	mountPath   aws.LoginOption
-	_type       aws.LoginOption
-	signature   aws.LoginOption
-	serverIdHdr aws.LoginOption
-	nonce       aws.LoginOption
-	region      aws.LoginOption
+	role        string
+	mountPath   string
+	_type       int
+	signature   int
+	serverIdHdr string
+	nonce       string
+	region      string
 
 	err error
 }
@@ -38,25 +39,17 @@ type VaultAwsAuth struct {
 // NewVaultAwsAuthMethod creates a new AWS authentication method helper
 func NewVaultAwsAuthMethod() *VaultAwsAuth {
 	return &VaultAwsAuth{
-		_type:     aws.WithIAMAuth(),
-		signature: aws.WithPKCS7Signature(),
+		_type:     VaultAwsAuthTypeIAM,        //aws.WithIAMAuth(),
+		signature: VaultAwsAuthSignaturePKCS7, //aws.WithPKCS7Signature(),
 	}
 }
 
 // WithRole sets the role
 func (a *VaultAwsAuth) WithRole(role string) *VaultAwsAuth {
 	if a.err == nil {
-		var err error
-
-		role, err = helpers.LoadAndReplaceEnvs(role)
-		if err == nil {
-			if len(role) > 0 {
-				a.role = aws.WithRole(role)
-			} else {
-				a.role = nil
-			}
-		} else {
-			a.err = err
+		role, a.err = helpers.LoadAndReplaceEnvs(role)
+		if a.err == nil {
+			a.role = role
 		}
 	}
 	return a
@@ -70,14 +63,9 @@ func (a *VaultAwsAuth) WithType(_type interface{}) *VaultAwsAuth {
 			{"ec2", VaultAwsAuthTypeEC2},
 		})
 		if err == nil {
-			switch i {
-			case VaultAwsAuthTypeIAM:
-				a._type = aws.WithIAMAuth()
-			case VaultAwsAuthTypeEC2:
-				a._type = aws.WithEC2Auth()
-			}
+			a._type = i
 		} else if errors.Is(err, helpers.ErrIsNil) {
-			a._type = aws.WithIAMAuth()
+			a._type = VaultAwsAuthTypeIAM
 		} else {
 			a.err = errors.New("invalid type specified for Vault's AWS auth")
 		}
@@ -88,7 +76,7 @@ func (a *VaultAwsAuth) WithType(_type interface{}) *VaultAwsAuth {
 // WithTypeIAM sets the authentication type as IAM
 func (a *VaultAwsAuth) WithTypeIAM() *VaultAwsAuth {
 	if a.err == nil {
-		a._type = aws.WithIAMAuth()
+		a._type = VaultAwsAuthTypeIAM
 	}
 	return a
 }
@@ -96,7 +84,7 @@ func (a *VaultAwsAuth) WithTypeIAM() *VaultAwsAuth {
 // WithTypeEC2 sets the authentication type as EC2
 func (a *VaultAwsAuth) WithTypeEC2() *VaultAwsAuth {
 	if a.err == nil {
-		a._type = aws.WithEC2Auth()
+		a._type = VaultAwsAuthTypeEC2
 	}
 	return a
 }
@@ -104,17 +92,9 @@ func (a *VaultAwsAuth) WithTypeEC2() *VaultAwsAuth {
 // WithIamServerID sets the server id header when authenticating as IAM
 func (a *VaultAwsAuth) WithIamServerID(id string) *VaultAwsAuth {
 	if a.err == nil {
-		var err error
-
-		id, err = helpers.LoadAndReplaceEnvs(id)
-		if err == nil {
-			if len(id) > 0 {
-				a.serverIdHdr = aws.WithIAMServerIDHeader(id)
-			} else {
-				a.serverIdHdr = nil
-			}
-		} else {
-			a.err = err
+		id, a.err = helpers.LoadAndReplaceEnvs(id)
+		if a.err == nil {
+			a.serverIdHdr = id
 		}
 	}
 	return a
@@ -128,14 +108,9 @@ func (a *VaultAwsAuth) WithSignature(signature interface{}) *VaultAwsAuth {
 			{"pkcs7", VaultAwsAuthSignaturePKCS7},
 		})
 		if err == nil {
-			switch i {
-			case VaultAwsAuthSignatureIdentity:
-				a.signature = aws.WithIdentitySignature()
-			case VaultAwsAuthSignaturePKCS7:
-				a.signature = aws.WithPKCS7Signature()
-			}
+			a.signature = i
 		} else if errors.Is(err, helpers.ErrIsNil) {
-			a.signature = aws.WithPKCS7Signature()
+			a.signature = VaultAwsAuthSignaturePKCS7
 		} else {
 			a.err = errors.New("invalid signature type specified for Vault's AWS auth")
 		}
@@ -146,7 +121,7 @@ func (a *VaultAwsAuth) WithSignature(signature interface{}) *VaultAwsAuth {
 // WithIdentitySignature tells the client to use the cryptographic identity document signature to verify EC2 auth logins
 func (a *VaultAwsAuth) WithIdentitySignature() *VaultAwsAuth {
 	if a.err == nil {
-		a.signature = aws.WithIdentitySignature()
+		a.signature = VaultAwsAuthSignatureIdentity
 	}
 	return a
 }
@@ -154,7 +129,7 @@ func (a *VaultAwsAuth) WithIdentitySignature() *VaultAwsAuth {
 // WithPKCS7Signature tells the client to use the PKCS #7 signature to verify EC2 auth logins
 func (a *VaultAwsAuth) WithPKCS7Signature() *VaultAwsAuth {
 	if a.err == nil {
-		a.signature = aws.WithPKCS7Signature()
+		a.signature = VaultAwsAuthSignaturePKCS7
 	}
 	return a
 }
@@ -162,17 +137,9 @@ func (a *VaultAwsAuth) WithPKCS7Signature() *VaultAwsAuth {
 // WithNonce sets nonce to use. Defaults to generate a random uuid
 func (a *VaultAwsAuth) WithNonce(nonce string) *VaultAwsAuth {
 	if a.err == nil {
-		var err error
-
-		nonce, err = helpers.LoadAndReplaceEnvs(nonce)
-		if err == nil {
-			if len(nonce) > 0 {
-				a.nonce = aws.WithNonce(nonce)
-			} else {
-				a.nonce = nil
-			}
-		} else {
-			a.err = err
+		nonce, a.err = helpers.LoadAndReplaceEnvs(nonce)
+		if a.err == nil {
+			a.nonce = nonce
 		}
 	}
 	return a
@@ -181,17 +148,9 @@ func (a *VaultAwsAuth) WithNonce(nonce string) *VaultAwsAuth {
 // WithRegion sets the region to use. Defaults to us-east-1
 func (a *VaultAwsAuth) WithRegion(region string) *VaultAwsAuth {
 	if a.err == nil {
-		var err error
-
-		region, err = helpers.LoadAndReplaceEnvs(region)
-		if err == nil {
-			if len(region) > 0 {
-				a.region = aws.WithRegion(region)
-			} else {
-				a.region = nil
-			}
-		} else {
-			a.err = err
+		region, a.err = helpers.LoadAndReplaceEnvs(region)
+		if a.err == nil {
+			a.region = region
 		}
 	}
 	return a
@@ -200,17 +159,9 @@ func (a *VaultAwsAuth) WithRegion(region string) *VaultAwsAuth {
 // WithMountPath sets an optional mount path. Defaults to aws
 func (a *VaultAwsAuth) WithMountPath(mountPath string) *VaultAwsAuth {
 	if a.err == nil {
-		var err error
-
-		mountPath, err = helpers.LoadAndReplaceEnvs(mountPath)
-		if err == nil {
-			if len(mountPath) > 0 {
-				a.mountPath = aws.WithMountPath(mountPath)
-			} else {
-				a.mountPath = nil
-			}
-		} else {
-			a.err = err
+		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		if a.err == nil {
+			a.mountPath = mountPath
 		}
 	}
 	return a
@@ -222,26 +173,50 @@ func (a *VaultAwsAuth) create() (api.AuthMethod, error) {
 		return nil, a.err
 	}
 
-	opts := make([]aws.LoginOption, 0)
-	if a.role == nil {
+	if len(a.role) == 0 {
 		return nil, errors.New("no role specified for Vault's AWS auth")
 	}
-	opts = append(opts, a.role)
-	if a.mountPath != nil {
-		opts = append(opts, a.mountPath)
+
+	opts := make([]aws.LoginOption, 0)
+	opts = append(opts, aws.WithRole(a.role))
+	if len(a.mountPath) > 0 {
+		opts = append(opts, aws.WithMountPath(a.mountPath))
 	}
-	opts = append(opts, a._type)
-	opts = append(opts, a.signature)
-	if a.serverIdHdr != nil {
-		opts = append(opts, a.serverIdHdr)
+	switch a._type {
+	case VaultAwsAuthTypeIAM:
+		opts = append(opts, aws.WithIAMAuth())
+	case VaultAwsAuthTypeEC2:
+		opts = append(opts, aws.WithEC2Auth())
 	}
-	if a.nonce != nil {
-		opts = append(opts, a.nonce)
+	switch a.signature {
+	case VaultAwsAuthSignatureIdentity:
+		opts = append(opts, aws.WithIdentitySignature())
+	case VaultAwsAuthSignaturePKCS7:
+		opts = append(opts, aws.WithPKCS7Signature())
 	}
-	if a.region != nil {
-		opts = append(opts, a.region)
+	if len(a.serverIdHdr) > 0 {
+		opts = append(opts, aws.WithIAMServerIDHeader(a.serverIdHdr))
+	}
+	if len(a.nonce) > 0 {
+		opts = append(opts, aws.WithNonce(a.nonce))
+	}
+	if len(a.region) > 0 {
+		opts = append(opts, aws.WithRegion(a.region))
 	}
 
 	// Return the authorization wrapper
 	return aws.NewAWSAuth(opts...)
+}
+
+func (a *VaultAwsAuth) hash() (res [32]byte) {
+	h := sha256.New()
+	_, _ = h.Write([]byte(a.role))
+	_, _ = h.Write([]byte(a.mountPath))
+	_, _ = h.Write([]byte{byte(a._type)})
+	_, _ = h.Write([]byte{byte(a.signature)})
+	_, _ = h.Write([]byte(a.serverIdHdr))
+	_, _ = h.Write([]byte(a.nonce))
+	_, _ = h.Write([]byte(a.region))
+	copy(res[:], h.Sum(nil))
+	return
 }

@@ -62,13 +62,13 @@ Apply reader options like:
 ```golang
 reader.WithLoader(...).WithSchema(...)
 ````
-| Method                  | Description                                                                           |
-|-------------------------|---------------------------------------------------------------------------------------|
-| `WithExtendedValidator` | Sets an optional settings validator callback.                                         |
-| `WithLoader`            | Sets the content loader. See the [loader section](#loaders) for details.              |
-| `WithReload`            | Sets a polling interval and a callback to call if the configuration settings changes. |
-| `WithNoReplaceEnvVars`  | Stops the loader from replacing environment  variables that can be found inside       |
-| `WithSchema`            | Sets an optional JSON schema validator.                                               |
+| Method                  | Description                                                                                                             |
+|-------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| `WithExtendedValidator` | Sets an optional settings validator callback.                                                                           |
+| `WithLoader`            | Sets the content loader. See the [loader section](#loaders) for details.                                                |
+| `WithMonitor`           | Sets a monitor that will inform about configuration settings changes. See the [monitor section](#monitors) for details. |
+| `WithNoReplaceEnvVars`  | Stops the loader from replacing environment variables that can be found inside.                                         |
+| `WithSchema`            | Sets an optional JSON schema validator.                                                                                 |
 
 And load the settings:
 
@@ -96,11 +96,55 @@ reader.WithLoader(ld)
 
 See [this document](docs/LOADERS.md) for details about the available loaders.
 
+## Monitor
+
+A monitor periodically checks if the configuration setting changed by reloading the settings based on the configuration
+reader parameters.
+
+On successful reads, it compares the current values with the previously loaded and, if a different setting is found,
+the callback is called with the new values.
+
+If read fails, the callback is called with the error object. 
+
+##### Notes:
+
+* The developer is responsible to notify other application components about the changes.
+* If settings are stored in global variables, the developer must ensure synchronized access to them.
+* If a reload error occurs, the developer is free to decide the next actions. The monitor will continue trying to
+  load settings until explicitly destroyed.
+
+```golang
+m := configreader.NewMonitor[{structure-name}](30 * time.Second, func(settings *{structure-name}, loadErr error) {
+    // do whatever you need here
+})
+defer m.Destroy()
+
+settings, err := configreader.New[{structure-name}]().
+    WithXXX(...).
+    WithMonitor(m).
+    Load(...)
+```
+
+The callback is called eve
+
 ## Environment variables
 
 Strings passed to a With... method of a loader or found within the loaded content, which contains the `%NAME%` pattern
 will try to find the environment variable named `NAME` and replace the tag with its value. Use two (2) consecutive
 `%%` characters to replace with one.
+
+## Tests
+
+If you want to run the tests of this library, take into consideration the following:
+
+Hashicorp Vault tests requires a running instance launched with the following command:
+
+    vault server -dev -dev-root-token-id="root" -dev-listen-address="0.0.0.0:8200" -dev-no-store-token
+
+If Vault is running on AWS, the EC2 instance requires an IAM role with following policies:
+
+* `ec2:DescribeInstances`
+* `iam:GetInstanceProfile` (if IAM Role binding is used)
 
 ## LICENSE
 

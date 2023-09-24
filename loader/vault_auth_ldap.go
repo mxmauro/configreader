@@ -1,6 +1,7 @@
 package loader
 
 import (
+	"crypto/sha256"
 	"errors"
 
 	"github.com/hashicorp/vault/api"
@@ -13,8 +14,8 @@ import (
 // VaultLdapAuth contains the options to access vault with the LDAP authentication mechanism
 type VaultLdapAuth struct {
 	userName  string
-	password  *ldap.Password
-	mountPath ldap.LoginOption
+	password  string
+	mountPath string
 
 	err error
 }
@@ -29,13 +30,9 @@ func NewVaultLdapAuthMethod() *VaultLdapAuth {
 // WithUsername sets the username
 func (a *VaultLdapAuth) WithUsername(userName string) *VaultLdapAuth {
 	if a.err == nil {
-		var err error
-
-		userName, err = helpers.LoadAndReplaceEnvs(userName)
-		if err == nil {
+		userName, a.err = helpers.LoadAndReplaceEnvs(userName)
+		if a.err == nil {
 			a.userName = userName
-		} else {
-			a.err = err
 		}
 	}
 	return a
@@ -44,18 +41,9 @@ func (a *VaultLdapAuth) WithUsername(userName string) *VaultLdapAuth {
 // WithPassword sets the access password
 func (a *VaultLdapAuth) WithPassword(password string) *VaultLdapAuth {
 	if a.err == nil {
-		var err error
-
-		password, err = helpers.LoadAndReplaceEnvs(password)
-		if err == nil {
-			if len(password) > 0 {
-				a.password = &ldap.Password{}
-				a.password.FromString = password
-			} else {
-				a.password = nil
-			}
-		} else {
-			a.err = err
+		password, a.err = helpers.LoadAndReplaceEnvs(password)
+		if a.err == nil {
+			a.password = password
 		}
 	}
 	return a
@@ -64,17 +52,9 @@ func (a *VaultLdapAuth) WithPassword(password string) *VaultLdapAuth {
 // WithMountPath sets an optional mount path. Defaults to ldap
 func (a *VaultLdapAuth) WithMountPath(mountPath string) *VaultLdapAuth {
 	if a.err == nil {
-		var err error
-
-		mountPath, err = helpers.LoadAndReplaceEnvs(mountPath)
-		if err == nil {
-			if len(mountPath) > 0 {
-				a.mountPath = ldap.WithMountPath(mountPath)
-			} else {
-				a.mountPath = nil
-			}
-		} else {
-			a.err = err
+		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		if a.err == nil {
+			a.mountPath = mountPath
 		}
 	}
 	return a
@@ -86,17 +66,29 @@ func (a *VaultLdapAuth) create() (api.AuthMethod, error) {
 		return nil, a.err
 	}
 
-	opts := make([]ldap.LoginOption, 0)
 	if len(a.userName) == 0 {
 		return nil, errors.New("no user name specified for Vault's LDAP auth")
 	}
-	if a.password == nil {
+	if len(a.password) > 0 {
 		return nil, errors.New("no password specified for Vault's LDAP auth")
 	}
-	if a.mountPath != nil {
-		opts = append(opts, a.mountPath)
+
+	opts := make([]ldap.LoginOption, 0)
+	if len(a.mountPath) > 0 {
+		opts = append(opts, ldap.WithMountPath(a.mountPath))
 	}
 
 	// Return the authorization wrapper
-	return ldap.NewLDAPAuth(a.userName, a.password, opts...)
+	return ldap.NewLDAPAuth(a.userName, &ldap.Password{
+		FromString: a.password,
+	}, opts...)
+}
+
+func (a *VaultLdapAuth) hash() (res [32]byte) {
+	h := sha256.New()
+	_, _ = h.Write([]byte(a.userName))
+	_, _ = h.Write([]byte(a.password))
+	_, _ = h.Write([]byte(a.mountPath))
+	copy(res[:], h.Sum(nil))
+	return
 }

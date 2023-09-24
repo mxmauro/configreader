@@ -52,8 +52,8 @@ func NewFileFromCommandLine(CmdLineParameter *string, CmdLineParameterShort *str
 	if cmdLineOption != nil || cmdLineOptionShort != nil {
 		for idx, value := range os.Args[1:] {
 			if (cmdLineOption != nil && value == *cmdLineOption) || (cmdLineOptionShort != nil && value == *cmdLineOptionShort) {
-				if idx+2 < len(os.Args) {
-					l.filename, l.err = expandAndNormalizeFilename(os.Args[idx+2])
+				if idx+1 < len(os.Args) {
+					l.WithFilename(os.Args[idx+1])
 				} else {
 					l.err = errors.New("missing filename in '" + value + "' parameter")
 				}
@@ -77,12 +77,7 @@ func NewFileFromEnvironmentVariable(Name string) *File {
 
 	filename, ok := os.LookupEnv(Name)
 	if ok {
-		filename, l.err = expandAndNormalizeFilename(l.filename)
-		if len(filename) > 0 {
-			l.filename = filename
-		} else {
-			l.err = errors.New("environment variable '" + Name + "' is empty")
-		}
+		l.WithFilename(filename)
 	} else {
 		l.err = errors.New("environment variable '" + Name + "' not found")
 	}

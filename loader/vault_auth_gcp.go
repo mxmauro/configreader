@@ -1,6 +1,7 @@
 package loader
 
 import (
+	"crypto/sha256"
 	"errors"
 
 	"github.com/hashicorp/vault/api"
@@ -20,9 +21,8 @@ const (
 // VaultGcpAuth contains the options to access vault with the GCP authentication mechanism
 type VaultGcpAuth struct {
 	role                   string
-	mountPath              gcp.LoginOption
-	typeId                 int
-	_type                  gcp.LoginOption
+	mountPath              string
+	_type                  int
 	iamServiceAccountEmail string
 
 	err error
@@ -33,8 +33,7 @@ type VaultGcpAuth struct {
 // NewVaultGcpAuthMethod creates a new GCP authentication method helper
 func NewVaultGcpAuthMethod() *VaultGcpAuth {
 	return &VaultGcpAuth{
-		typeId: VaultGcpAuthTypeGCE,
-		_type:  gcp.WithGCEAuth(),
+		_type: VaultGcpAuthTypeGCE,
 	}
 }
 
@@ -61,17 +60,9 @@ func (a *VaultGcpAuth) WithType(_type interface{}) *VaultGcpAuth {
 			{"iam", VaultGcpAuthTypeIAM},
 		})
 		if err == nil {
-			switch i {
-			case VaultGcpAuthTypeGCE:
-				a.typeId = VaultGcpAuthTypeGCE
-				a._type = gcp.WithGCEAuth()
-			case VaultGcpAuthTypeIAM:
-				a.typeId = VaultGcpAuthTypeIAM
-				a._type = gcp.WithIAMAuth(a.iamServiceAccountEmail)
-			}
+			a._type = i
 		} else if errors.Is(err, helpers.ErrIsNil) {
-			a.typeId = VaultGcpAuthTypeGCE
-			a._type = gcp.WithGCEAuth()
+			a._type = VaultGcpAuthTypeGCE
 		} else {
 			a.err = errors.New("invalid type specified for Vault's Azure auth")
 		}
@@ -82,8 +73,7 @@ func (a *VaultGcpAuth) WithType(_type interface{}) *VaultGcpAuth {
 // WithTypeGCE sets the authentication type as GCE
 func (a *VaultGcpAuth) WithTypeGCE() *VaultGcpAuth {
 	if a.err == nil {
-		a.typeId = VaultGcpAuthTypeGCE
-		a._type = gcp.WithGCEAuth()
+		a._type = VaultGcpAuthTypeGCE
 	}
 	return a
 }
@@ -91,8 +81,7 @@ func (a *VaultGcpAuth) WithTypeGCE() *VaultGcpAuth {
 // WithTypeIAM sets the authentication type as IAM
 func (a *VaultGcpAuth) WithTypeIAM() *VaultGcpAuth {
 	if a.err == nil {
-		a.typeId = VaultGcpAuthTypeIAM
-		a._type = gcp.WithIAMAuth(a.iamServiceAccountEmail)
+		a._type = VaultGcpAuthTypeIAM
 	}
 	return a
 }
@@ -100,16 +89,9 @@ func (a *VaultGcpAuth) WithTypeIAM() *VaultGcpAuth {
 // WithIamServiceAccountEmail sets the service account email for IAM authentication type
 func (a *VaultGcpAuth) WithIamServiceAccountEmail(email string) *VaultGcpAuth {
 	if a.err == nil {
-		var err error
-
-		email, err = helpers.LoadAndReplaceEnvs(email)
-		if err == nil {
+		email, a.err = helpers.LoadAndReplaceEnvs(email)
+		if a.err == nil {
 			a.iamServiceAccountEmail = email
-			if a.typeId == VaultGcpAuthTypeIAM {
-				a._type = gcp.WithIAMAuth(a.iamServiceAccountEmail)
-			}
-		} else {
-			a.err = err
 		}
 	}
 	return a
@@ -118,17 +100,9 @@ func (a *VaultGcpAuth) WithIamServiceAccountEmail(email string) *VaultGcpAuth {
 // WithMountPath sets an optional mount path. Defaults to gcp
 func (a *VaultGcpAuth) WithMountPath(mountPath string) *VaultGcpAuth {
 	if a.err == nil {
-		var err error
-
-		mountPath, err = helpers.LoadAndReplaceEnvs(mountPath)
-		if err == nil {
-			if len(mountPath) > 0 {
-				a.mountPath = gcp.WithMountPath(mountPath)
-			} else {
-				a.mountPath = nil
-			}
-		} else {
-			a.err = err
+		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		if a.err == nil {
+			a.mountPath = mountPath
 		}
 	}
 	return a
@@ -140,15 +114,31 @@ func (a *VaultGcpAuth) create() (api.AuthMethod, error) {
 		return nil, a.err
 	}
 
-	opts := make([]gcp.LoginOption, 0)
 	if len(a.role) == 0 {
 		return nil, errors.New("no role specified for Vault's GCP auth")
 	}
-	if a.mountPath != nil {
-		opts = append(opts, a.mountPath)
+
+	opts := make([]gcp.LoginOption, 0)
+	if len(a.mountPath) > 0 {
+		opts = append(opts, gcp.WithMountPath(a.mountPath))
 	}
-	opts = append(opts, a._type)
+	switch a._type {
+	case VaultGcpAuthTypeGCE:
+		opts = append(opts, gcp.WithGCEAuth())
+	case VaultGcpAuthTypeIAM:
+		opts = append(opts, gcp.WithIAMAuth(a.iamServiceAccountEmail))
+	}
 
 	// Return the authorization wrapper
 	return gcp.NewGCPAuth(a.role, opts...)
+}
+
+func (a *VaultGcpAuth) hash() (res [32]byte) {
+	h := sha256.New()
+	_, _ = h.Write([]byte(a.role))
+	_, _ = h.Write([]byte(a.mountPath))
+	_, _ = h.Write([]byte{byte(a._type)})
+	_, _ = h.Write([]byte(a.iamServiceAccountEmail))
+	copy(res[:], h.Sum(nil))
+	return
 }

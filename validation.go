@@ -42,7 +42,7 @@ func (cr *ConfigReader[T]) validate(encodedSettings []byte) error {
 		schema := []byte(cr.schema)
 
 		// Remove comments from schema
-		removeComments(schema)
+		schema = removeComments(schema)
 
 		// Decode it
 		rs := jsonschema.Schema{}
