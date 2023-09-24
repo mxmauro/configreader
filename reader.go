@@ -5,7 +5,6 @@ import (
 	"crypto/sha512"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/mxmauro/configreader/internal/helpers"
 	"github.com/mxmauro/configreader/loader"
@@ -20,13 +19,15 @@ type ConfigReader[T any] struct {
 	extendedValidator ExtendedValidator[T]
 	noReplaceEnvVars  bool
 
-	reloader struct {
-		timeout               time.Duration
-		callback              SettingsChangedCallback[T]
-		stopCh                chan struct{}
-		doneCh                chan struct{}
-		hashOfEncodedSettings [64]byte
-	}
+	monitor *Monitor[T]
+	/*
+		reloader struct {
+			pollInterval          time.Duration
+			callback              SettingsChangedCallback[T]
+			stopCh                <-chan struct{}
+			hashOfEncodedSettings [64]byte
+		}
+	*/
 
 	err error
 }
@@ -76,11 +77,12 @@ func (cr *ConfigReader[T]) WithNoReplaceEnvVars() *ConfigReader[T] {
 	return cr
 }
 
-// WithReload sets a polling interval and a callback to call if the configuration settings changes
-func (cr *ConfigReader[T]) WithReload(pollInterval time.Duration, callback SettingsChangedCallback[T]) *ConfigReader[T] {
+// WithMonitor sets a monitor that will inform about configuration settings changes
+//
+// NOTE: First send a value to stop monitoring and then wait until a value is received on the same channel
+func (cr *ConfigReader[T]) WithMonitor(m *Monitor[T]) *ConfigReader[T] {
 	if cr.err == nil {
-		cr.reloader.timeout = pollInterval
-		cr.reloader.callback = callback
+		cr.monitor = m
 	}
 	return cr
 }
@@ -113,17 +115,15 @@ func (cr *ConfigReader[T]) Load(ctx context.Context) (*T, error) {
 	}
 
 	// Start re-loader goroutine if provided
-	if cr.reloader.callback != nil && cr.reloader.timeout > 0 {
-		cr.startReloadPoller(hashOfEncodedSettings)
+	if cr.monitor != nil {
+		err = cr.monitor.start(cr, hashOfEncodedSettings)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Done
 	return settings, nil
-}
-
-// Destroy destroys the configuration reader. Used mainly to stop reload goroutine.
-func (cr *ConfigReader[T]) Destroy() {
-	cr.stopReloadPoller()
 }
 
 func (cr *ConfigReader[T]) load(ctx context.Context) (*T, [64]byte, error) {

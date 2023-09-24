@@ -156,6 +156,8 @@ func (client *vaultClient) readWithContext(ctx context.Context, path string) (*a
 	client.mtx.Lock()
 	defer client.mtx.Unlock()
 
+ExecuteLogin:
+	origNeedLogin := client.needLogin
 	if client.needLogin {
 		client.loginAttempt += 1
 
@@ -174,6 +176,14 @@ func (client *vaultClient) readWithContext(ctx context.Context, path string) (*a
 	// Now we can read the secret
 	secret, err := client.apiClient.Logical().ReadWithContext(ctx, path)
 	if err != nil {
+		// If we get access denied but no login was executed, then it may happen we were renewing the token
+		// near to expiration and it was still pending to process.
+		// In this case, assume we need to log in again. Worker code will ignore a potential renewed token.
+		if origNeedLogin == false && apiResponseStatusCode(err) == 403 {
+			client.needLogin = true
+			goto ExecuteLogin
+		}
+
 		return nil, err
 	}
 
@@ -225,13 +235,22 @@ MainLoop:
 		}
 
 	ProcessMessage:
+		// Check if this message still belongs to our last login attempt
+		client.mtx.Lock()
+		if message.loginAttempt != client.loginAttempt {
+			client.mtx.Unlock()
+			continue // Discard and restart
+		}
+		client.mtx.Unlock()
+
+		// Get TTL
 		ttl, err := message.secret.TokenTTL()
 		if err != nil {
 			continue // This happens only when the secret has an invalid TTL
 		}
 
 		// If TTL is 0 then no need to monitor a non-expiring token
-		if ttl == 0 {
+		if ttl <= 0 {
 			continue
 		}
 
@@ -242,6 +261,7 @@ MainLoop:
 		}
 
 		// Monitor this secret
+	NonRenewable:
 		if !renewable {
 			newMessage, quit := client.monitorNonRenewableAuthToken(ttl)
 			if quit {
@@ -252,11 +272,18 @@ MainLoop:
 				goto ProcessMessage
 			}
 		} else {
-			newMessage, quit := client.monitorRenewableAuthToken(ttl, message.secret.Auth.ClientToken)
+			newMessage, deniedRemainingTTL, quit := client.monitorRenewableAuthToken(ttl, message.secret.Auth.ClientToken)
 			if quit {
 				break MainLoop
-			}
-			if newMessage != nil {
+			} else if deniedRemainingTTL != nil {
+				// If the request was denied, probably the token does not have enough privileges to renew itself, so
+				// fallback non-renewable
+				renewable = false
+				ttl = *deniedRemainingTTL
+				if ttl > 0 {
+					goto NonRenewable
+				}
+			} else if newMessage != nil {
 				// monitorRenewableAuthToken only fills the secret field, preserve the rest
 				message.secret = newMessage.secret
 				goto ProcessMessage
@@ -292,9 +319,10 @@ func (client *vaultClient) monitorNonRenewableAuthToken(ttl time.Duration) (mess
 	}
 }
 
-func (client *vaultClient) monitorRenewableAuthToken(ttl time.Duration, clientToken string) (message *tokenMonitorMessage, quit bool) {
+func (client *vaultClient) monitorRenewableAuthToken(ttl time.Duration, clientToken string) (message *tokenMonitorMessage, deniedRemainingTTL *time.Duration, quit bool) {
 	var retryBackoff *backoff.ExponentialBackOff
 	var toSleep time.Duration
+	var accessDenied bool
 
 	initialTime := time.Now()
 	grace := calculateGracePeriod(ttl)
@@ -310,6 +338,9 @@ func (client *vaultClient) monitorRenewableAuthToken(ttl time.Duration, clientTo
 				return
 			}
 		}
+		if toSleep == 0 {
+			toSleep = 0
+		}
 
 		// Wait some time before renewal
 		select {
@@ -324,8 +355,12 @@ func (client *vaultClient) monitorRenewableAuthToken(ttl time.Duration, clientTo
 		case <-time.After(toSleep):
 		}
 
-		message, quit = client.tryRenewAuthToken(clientToken)
+		message, accessDenied, quit = client.tryRenewAuthToken(clientToken)
 		if quit || message != nil {
+			return
+		} else if accessDenied {
+			remainingTTL := initialTime.Add(ttl).Sub(time.Now())
+			deniedRemainingTTL = &remainingTTL
 			return
 		}
 
@@ -347,7 +382,7 @@ func (client *vaultClient) monitorRenewableAuthToken(ttl time.Duration, clientTo
 	}
 }
 
-func (client *vaultClient) tryRenewAuthToken(clientToken string) (message *tokenMonitorMessage, quit bool) {
+func (client *vaultClient) tryRenewAuthToken(clientToken string) (message *tokenMonitorMessage, accessDenied bool, quit bool) {
 	// Convert the secret changed signal to a context
 	secretChangedCtx, secretChangedCancelCtx := channelcontext.New[tokenMonitorMessage](client.tokenMonitor.messageCh)
 	defer secretChangedCancelCtx()
@@ -363,13 +398,11 @@ func (client *vaultClient) tryRenewAuthToken(clientToken string) (message *token
 		case 0:
 			// Quitting ...
 			quit = true
-			return
 
 		case 1:
 			// The secret changed signal was triggered
 			msg := secretChangedCtx.DoneValue()
 			message = &msg
-			return
 
 		default:
 			// panic("please report this")
@@ -381,7 +414,10 @@ func (client *vaultClient) tryRenewAuthToken(clientToken string) (message *token
 			message = &tokenMonitorMessage{
 				secret: renewedSecret,
 			}
-			return
+		} else {
+			if apiResponseStatusCode(err) == 403 {
+				accessDenied = true
+			}
 		}
 	}
 
@@ -410,4 +446,15 @@ func calculateSleepDuration(ttl, grace time.Duration) time.Duration {
 	// The sleep duration is set to 2/3 of the current lease duration plus
 	// 1/3 of the current grace period, which adds jitter.
 	return time.Duration(float64(ttl.Nanoseconds())*2/3 + float64(grace.Nanoseconds())/3)
+}
+
+func apiResponseStatusCode(err error) int {
+	if err != nil {
+		var apiErr *api.ResponseError
+
+		if errors.As(err, &apiErr) {
+			return apiErr.StatusCode
+		}
+	}
+	return 0
 }

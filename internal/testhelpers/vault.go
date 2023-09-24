@@ -2,6 +2,7 @@ package testhelpers
 
 import (
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -16,7 +17,14 @@ const (
 
 //------------------------------------------------------------------------------
 
-func EnsureVaultAvailability(t *testing.T, vaultAddr string) {
+func EnsureVaultAvailability(t *testing.T) string {
+	// Get vault address
+	vaultAddr := os.Getenv("VAULT_ADDR")
+	if len(vaultAddr) == 0 {
+		vaultAddr = "127.0.0.1:8200"
+		t.Logf("VAULT_ADDR environment variable not set, assuming 127.0.0.1:8200")
+	}
+
 	conn, err := net.DialTimeout("tcp", vaultAddr, time.Second)
 	if err != nil {
 		t.Logf("Vault server is not running. Skipping....")
@@ -34,6 +42,9 @@ func EnsureVaultAvailability(t *testing.T, vaultAddr string) {
 	if conn != nil {
 		_ = conn.Close()
 	}
+
+	// Return address
+	return vaultAddr
 }
 
 func CreateRootVaultClient(t *testing.T, vaultAddr string) *api.Client {
