@@ -19,6 +19,7 @@ const (
 const (
 	VaultAwsAuthSignatureIdentity = iota + 1
 	VaultAwsAuthSignaturePKCS7
+	VaultAwsAuthSignatureRSA2048
 )
 
 // VaultAwsAuth contains the options to access vault with the AWS authentication mechanism
@@ -106,6 +107,7 @@ func (a *VaultAwsAuth) WithSignature(signature interface{}) *VaultAwsAuth {
 		i, err := helpers.GetEnumEnv(signature, []helpers.EnumEnvAllowedValues{
 			{"identity", VaultAwsAuthSignatureIdentity},
 			{"pkcs7", VaultAwsAuthSignaturePKCS7},
+			{"rsa2048", VaultAwsAuthSignatureRSA2048},
 		})
 		if err == nil {
 			a.signature = i
@@ -130,6 +132,14 @@ func (a *VaultAwsAuth) WithIdentitySignature() *VaultAwsAuth {
 func (a *VaultAwsAuth) WithPKCS7Signature() *VaultAwsAuth {
 	if a.err == nil {
 		a.signature = VaultAwsAuthSignaturePKCS7
+	}
+	return a
+}
+
+// WithRSA2048Signature tells the client to use the RSA 2048 signature to verify EC2 auth logins
+func (a *VaultAwsAuth) WithRSA2048Signature() *VaultAwsAuth {
+	if a.err == nil {
+		a.signature = VaultAwsAuthSignatureRSA2048
 	}
 	return a
 }
@@ -193,6 +203,9 @@ func (a *VaultAwsAuth) create() (api.AuthMethod, error) {
 		opts = append(opts, aws.WithIdentitySignature())
 	case VaultAwsAuthSignaturePKCS7:
 		opts = append(opts, aws.WithPKCS7Signature())
+	case VaultAwsAuthSignatureRSA2048:
+		opts = append(opts, aws.WithRSA2048Signature())
+
 	}
 	if len(a.serverIdHdr) > 0 {
 		opts = append(opts, aws.WithIAMServerIDHeader(a.serverIdHdr))
