@@ -148,4 +148,4 @@ If Vault is running on AWS, the EC2 instance requires an IAM role with following
 
 ## LICENSE
 
-See the [license](LICENSE) file for details.
+See [LICENSE](/LICENSE) file for details.
