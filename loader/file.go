@@ -30,38 +30,25 @@ func NewFileFromCommandLine(CmdLineParameter *string, CmdLineParameterShort *str
 	l := &File{}
 
 	// Setup command-line parameters to look for.
-	cmdLineOption := addressOfString("--settings")
-	cmdLineOptionShort := addressOfString("-S")
+	longOpt := "--settings"
+	shortOpt := "-S"
 
 	if CmdLineParameter != nil {
-		if len(*CmdLineParameter) > 0 {
-			cmdLineOption = addressOfString("--" + *CmdLineParameter)
-		} else {
-			cmdLineOption = nil
-		}
+		longOpt = *CmdLineParameter
 	}
 	if CmdLineParameterShort != nil {
-		if len(*CmdLineParameterShort) > 0 {
-			cmdLineOptionShort = addressOfString("-" + *CmdLineParameterShort)
-		} else {
-			cmdLineOptionShort = nil
-		}
+		shortOpt = *CmdLineParameterShort
 	}
 
 	// Lookup for the parameter's value.
-	if cmdLineOption != nil || cmdLineOptionShort != nil {
-		for idx, value := range os.Args[1:] {
-			if (cmdLineOption != nil && value == *cmdLineOption) || (cmdLineOptionShort != nil && value == *cmdLineOptionShort) {
-				if idx+1 < len(os.Args) {
-					l.WithFilename(os.Args[idx+1])
-				} else {
-					l.err = errors.New("missing filename in '" + value + "' parameter")
-				}
-				break
-			}
-		}
-		if l.err == nil && len(l.filename) == 0 {
+	if len(longOpt) > 0 || len(shortOpt) > 0 {
+		filename, errParam := getCmdLineParamValue(longOpt, shortOpt)
+		if len(filename) > 0 {
+			l.WithFilename(filename)
+		} else if len(errParam) == 0 {
 			l.err = errors.New("command line parameter not found")
+		} else {
+			l.err = errors.New("missing filename in '" + errParam + "' parameter")
 		}
 	} else {
 		l.err = errors.New("no command-line option was specified")
@@ -99,7 +86,7 @@ func (l *File) WithFilename(filename string) *File {
 
 // Load loads the content from the file
 // NOTE: We are not making use of the context assuming configuration files will be small and on a local disk
-func (l *File) Load(ctx context.Context) ([]byte, error) {
+func (l *File) Load(_ context.Context) ([]byte, error) {
 	// If an error was set by a With... function, return it
 	if l.err != nil {
 		return nil, l.err
@@ -138,8 +125,4 @@ func expandAndNormalizeFilename(filename string) (string, error) {
 
 	// Done
 	return filename, err
-}
-
-func addressOfString(s string) *string {
-	return &s
 }

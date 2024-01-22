@@ -3,6 +3,7 @@ package loader
 import (
 	"crypto/sha256"
 	"errors"
+	"os"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/api/auth/aws"
@@ -188,10 +189,13 @@ func (a *VaultAwsAuth) create() (api.AuthMethod, error) {
 	}
 
 	opts := make([]aws.LoginOption, 0)
+
 	opts = append(opts, aws.WithRole(a.role))
+
 	if len(a.mountPath) > 0 {
 		opts = append(opts, aws.WithMountPath(a.mountPath))
 	}
+
 	switch a._type {
 	case VaultAwsAuthTypeIAM:
 		opts = append(opts, aws.WithIAMAuth())
@@ -205,17 +209,27 @@ func (a *VaultAwsAuth) create() (api.AuthMethod, error) {
 		opts = append(opts, aws.WithPKCS7Signature())
 	case VaultAwsAuthSignatureRSA2048:
 		opts = append(opts, aws.WithRSA2048Signature())
-
 	}
+
 	if len(a.serverIdHdr) > 0 {
 		opts = append(opts, aws.WithIAMServerIDHeader(a.serverIdHdr))
 	}
+
 	if len(a.nonce) > 0 {
 		opts = append(opts, aws.WithNonce(a.nonce))
 	}
-	if len(a.region) > 0 {
-		opts = append(opts, aws.WithRegion(a.region))
+
+	region := a.region
+	if len(region) == 0 {
+		region = os.Getenv("AWS_REGION")
+		if len(region) == 0 {
+			region = os.Getenv("AWS_DEFAULT_REGION")
+			if len(region) == 0 {
+				return nil, errors.New("AWS region not provided and not defined in environment variables")
+			}
+		}
 	}
+	opts = append(opts, aws.WithRegion(a.region))
 
 	// Return the authorization wrapper
 	return aws.NewAWSAuth(opts...)

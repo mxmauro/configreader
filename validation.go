@@ -1,10 +1,10 @@
 package configreader
 
 import (
-	"context"
-	"encoding/json"
+	"bytes"
+	"errors"
 
-	"github.com/qri-io/jsonschema"
+	"github.com/santhosh-tekuri/jsonschema"
 )
 
 // -----------------------------------------------------------------------------
@@ -39,26 +39,33 @@ func (*ValidationError) Unwrap() error {
 func (cr *ConfigReader[T]) validate(encodedSettings []byte) error {
 	// Validate against a schema if one is provided
 	if len(cr.schema) > 0 {
+		var rs *jsonschema.Schema
+
 		schema := []byte(cr.schema)
 
 		// Remove comments from schema
 		schema = removeComments(schema)
 
 		// Decode it
-		rs := jsonschema.Schema{}
-		err := json.Unmarshal(schema, &rs)
+		compiler := jsonschema.NewCompiler()
+		err := compiler.AddResource("schema.json", bytes.NewReader(schema))
+		if err != nil {
+			return err
+		}
+		rs, err = compiler.Compile("schema.json")
 		if err != nil {
 			return err
 		}
 
 		// Execute validation
-		var schemaErrors []jsonschema.KeyError
-
-		schemaErrors, err = rs.ValidateBytes(context.Background(), encodedSettings)
+		err = rs.Validate(bytes.NewReader(encodedSettings))
 		if err != nil {
+			var validationErr *jsonschema.ValidationError
+
+			if errors.As(err, &validationErr) {
+				return newValidationError(validationErr)
+			}
 			return err
-		} else if len(schemaErrors) > 0 {
-			return newValidationError(schemaErrors)
 		}
 	}
 
@@ -66,13 +73,13 @@ func (cr *ConfigReader[T]) validate(encodedSettings []byte) error {
 	return nil
 }
 
-func newValidationError(errors []jsonschema.KeyError) error {
+func newValidationError(validationErr *jsonschema.ValidationError) error {
 	err := &ValidationError{
-		Failures: make([]ValidationErrorFailure, len(errors)),
+		Failures: make([]ValidationErrorFailure, len(validationErr.Causes)),
 	}
 
-	for idx, e := range errors {
-		err.Failures[idx].Location = e.PropertyPath
+	for idx, e := range validationErr.Causes {
+		err.Failures[idx].Location = e.SchemaPtr
 		err.Failures[idx].Message = e.Message
 	}
 

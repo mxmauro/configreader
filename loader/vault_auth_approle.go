@@ -93,9 +93,11 @@ func (a *VaultAppRoleAuth) create() (api.AuthMethod, error) {
 	}
 
 	opts := make([]approle.LoginOption, 0)
+
 	if len(a.mountPath) > 0 {
 		opts = append(opts, approle.WithMountPath(a.mountPath))
 	}
+
 	if a.unwrapToken {
 		opts = append(opts, approle.WithWrappingToken())
 	}

@@ -29,7 +29,7 @@ func NewMemoryFromEnvironmentVariable(Name string) *Memory {
 	data, ok := os.LookupEnv(Name)
 	if ok {
 		if len(data) > 0 {
-			// Make a copy of the source data so we can safely manipulate it
+			// Make a copy of the source data, so we can safely manipulate it
 			l.data = []byte(data)
 		} else {
 			l.err = errors.New("environment variable '" + Name + "' is empty")
@@ -45,7 +45,7 @@ func NewMemoryFromEnvironmentVariable(Name string) *Memory {
 // WithData sets the data to return when the content is loaded
 func (l *Memory) WithData(data string) *Memory {
 	if l.err == nil {
-		// Make a copy of the source data so we can safely manipulate it
+		// Make a copy of the source data, so we can safely manipulate it
 		l.data = []byte(data)
 	}
 	return l
@@ -59,5 +59,5 @@ func (l *Memory) Load(_ context.Context) ([]byte, error) {
 	}
 
 	// Return content
-	return []byte(l.data), nil
+	return l.data, nil
 }

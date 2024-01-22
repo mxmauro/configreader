@@ -28,14 +28,14 @@ var (
 
 // -----------------------------------------------------------------------------
 
-// Http wraps content to be loaded from an URL
+// Http wraps content to be loaded from a URL
 type Http struct {
 	host string
 	path string
 
 	credentials *url.Userinfo
 
-	query map[string]string
+	query map[string][]string
 
 	headers map[string]string
 
@@ -62,7 +62,7 @@ func init() {
 // NewHttp create a new web loader
 func NewHttp() *Http {
 	return &Http{
-		query:   make(map[string]string),
+		query:   make(map[string][]string),
 		headers: make(map[string]string),
 	}
 }
@@ -112,28 +112,30 @@ func (l *Http) WithCredentials(username string, password string) *Http {
 }
 
 // WithQuery sets the query parameters
-func (l *Http) WithQuery(query map[string]string) *Http {
+func (l *Http) WithQuery(query map[string][]string) *Http {
 	if l.err == nil {
 		var err error
 
-		queryCopy := make(map[string]string)
-		for key, value := range query {
+		queryCopy := make(map[string][]string)
+		for key, values := range query {
 			if len(key) == 0 {
 				err = errors.New("invalid query parameter")
 				break
 			}
 
-			value, err = helpers.LoadAndReplaceEnvs(value)
-			if err != nil {
-				break
+			copiedValues := make([]string, 0)
+			for _, value := range values {
+				value, err = helpers.LoadAndReplaceEnvs(value)
+				if err != nil {
+					break
+				}
+				copiedValues = append(copiedValues, value)
 			}
 
-			if len(value) > 0 {
-				queryCopy[key] = value
-			}
+			queryCopy[key] = copiedValues
 		}
 
-		if l.err == nil {
+		if err == nil {
 			l.query = queryCopy
 		} else {
 			l.err = err
@@ -143,17 +145,25 @@ func (l *Http) WithQuery(query map[string]string) *Http {
 }
 
 // WithQueryItem sets a single query parameter
-func (l *Http) WithQueryItem(key string, value string) *Http {
+func (l *Http) WithQueryItem(key string, values []string) *Http {
 	if l.err == nil {
 		if len(key) > 0 {
 			var err error
 
-			value, err = helpers.LoadAndReplaceEnvs(value)
+			copiedValues := make([]string, 0)
+			for _, value := range values {
+				value, err = helpers.LoadAndReplaceEnvs(value)
+				if err != nil {
+					break
+				}
+				copiedValues = append(copiedValues, value)
+			}
+
 			if err == nil {
 				if l.query == nil {
-					l.query = make(map[string]string)
+					l.query = make(map[string][]string)
 				}
-				l.query[key] = value
+				l.query[key] = copiedValues
 			} else {
 				l.err = err
 			}
@@ -235,8 +245,8 @@ func (l *Http) WithTLS(tlsConfig *tls.Config) *Http {
 	return l
 }
 
-// WithUrl sets the host, port, path and other settings from the provided url
-func (l *Http) WithUrl(rawURL string) *Http {
+// WithURL sets the host, port, path and other settings from the provided url
+func (l *Http) WithURL(rawURL string) *Http {
 	if l.err == nil {
 		// Parse url
 		u, err := url.Parse(rawURL)
@@ -264,13 +274,7 @@ func (l *Http) WithUrl(rawURL string) *Http {
 			_ = l.WithCredentials(u.User.Username(), password)
 		}
 
-		query := make(map[string]string)
-		for key, value := range u.Query() {
-			if len(value) > 0 && len(value[0]) != 0 {
-				query[key] = value[0]
-			}
-		}
-		l.WithHeaders(query)
+		l.WithQuery(u.Query())
 	}
 
 	// Done
@@ -312,11 +316,13 @@ func (l *Http) Load(ctx context.Context) ([]byte, error) {
 
 	// Set query parameters if provided
 	if len(l.query) > 0 {
-		values := url.Values{}
-		for key, value := range l.query {
-			values.Add(key, value)
+		query := url.Values{}
+		for key, values := range l.query {
+			for _, value := range values {
+				query.Add(key, value)
+			}
 		}
-		u.RawQuery = values.Encode()
+		u.RawQuery = query.Encode()
 	}
 
 	// Create the http client object and set up transport
@@ -347,22 +353,25 @@ func (l *Http) Load(ctx context.Context) ([]byte, error) {
 	// Execute request
 	ctxWithTimeout, ctxCancel := context.WithTimeout(ctx, httpRequestTimeout)
 	defer ctxCancel()
+
 	resp, err = client.Do(req.WithContext(ctxWithTimeout))
+	if resp != nil && resp.Body != nil {
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	// Check if the request succeeded
 	if resp.StatusCode != 200 {
-		_ = resp.Body.Close()
-
 		return nil, fmt.Errorf("unexpected HTTP status code [http-status=%v]", resp.Status)
 	}
 
 	// Read response body
 	var responseBody []byte
 	responseBody, err = io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
 	if err != nil {
 		return nil, err
 	}

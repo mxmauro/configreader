@@ -3,6 +3,8 @@ package loader
 import (
 	"crypto/sha256"
 	"errors"
+	"fmt"
+	"os"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/api/auth/kubernetes"
@@ -73,12 +75,32 @@ func (a *VaultKubernetesAuth) create() (api.AuthMethod, error) {
 	if len(a.role) == 0 {
 		return nil, errors.New("no role specified for Vault's Kubernetes auth")
 	}
-	if len(a.accountToken) == 0 {
-		return nil, errors.New("no access token specified for Vault's Kubernetes auth")
-	}
 
 	opts := make([]kubernetes.LoginOption, 0)
-	opts = append(opts, kubernetes.WithServiceAccountToken(a.accountToken))
+
+	token := a.accountToken
+	if len(token) == 0 {
+		for _, filename := range k8sTokenFiles {
+			fileInfo, err := os.Stat(filename)
+			if err == nil && fileInfo.Size() > 0 {
+				var content []byte
+
+				content, err = os.ReadFile(filename)
+				if err != nil {
+					return nil, fmt.Errorf("unable to read K8S service account token file [err=%w]", err)
+				}
+
+				token = string(content)
+				break
+			}
+		}
+
+		if len(token) == 0 {
+			return nil, errors.New("no access token specified for Vault's Kubernetes auth and unable to locate K8S service account token file")
+		}
+	}
+	opts = append(opts, kubernetes.WithServiceAccountToken(token))
+
 	if len(a.mountPath) > 0 {
 		opts = append(opts, kubernetes.WithMountPath(a.mountPath))
 	}

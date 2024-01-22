@@ -20,14 +20,6 @@ type ConfigReader[T any] struct {
 	noReplaceEnvVars  bool
 
 	monitor *Monitor[T]
-	/*
-		reloader struct {
-			pollInterval          time.Duration
-			callback              SettingsChangedCallback[T]
-			stopCh                <-chan struct{}
-			hashOfEncodedSettings [64]byte
-		}
-	*/
 
 	err error
 }

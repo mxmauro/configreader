@@ -48,11 +48,11 @@ Creates a loader that reads data from a file. Available loader options:
 loader.NewHttp()
 ```
 
-Creates a loader that reads data from a web site. Available loader options:
+Creates a loader that reads data from a website. Available loader options:
 
 | Method            | Description                                      |
 |-------------------|--------------------------------------------------|
-| `WithUrl`         | Sets the options from the provided url.          |
+| `WithURL`         | Sets the options from the provided url.          |
 | `WithHost`        | Sets the host address and, optionally, the port. |
 | `WithPath`        | Sets the URL path.                               |
 | `WithQuery`       | Sets the query parameters.                       |
@@ -73,6 +73,7 @@ Creates a loader that reads data from [Hashicorp Vault](https://www.vaultproject
 
 | Method            | Description                                      |
 |-------------------|--------------------------------------------------|
+| `WithURL`         | Sets the options from the provided url.          |
 | `WithAuth`        | Sets the authorization method to use.            |
 | `WithAccessToken` | Sets the access token to use as authorization.   |
 | `WithHost`        | Sets the host address and, optionally, the port. |
@@ -83,3 +84,16 @@ Creates a loader that reads data from [Hashicorp Vault](https://www.vaultproject
 | `WithHeaderItem`  | Sets a single request header.                    |
 
 [This document](VAULT.md) describes available authorization methods for use in the Vault loader.
+
+### Auto-detect
+
+```golang
+loader.NewAutoDetect(opts...)
+```
+
+Creates a loader that tries to auto-detect the source of the data to read.
+
+Depending on the provided options, it tries to check if the origin is passed with a command-line parameter or an
+environment variable.
+
+Then, a Hashicorp Vault, an HTTP or a File loader is created and returned.

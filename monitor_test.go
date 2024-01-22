@@ -21,7 +21,7 @@ type MonitorTest struct {
 
 func TestMonitor(t *testing.T) {
 	var value int32 = 1
-	var previousValue int = 1
+	var previousValue = 1
 
 	settingsMonitor := configreader.NewMonitor[MonitorTest](time.Second, func(settings *MonitorTest, loadErr error) {
 		if settings.Value == previousValue {

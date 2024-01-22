@@ -33,7 +33,7 @@ type TestSettingsMongoDB struct {
 //------------------------------------------------------------------------------
 
 var SchemaJSON = `{
-	"$schema": "http://json-schema.org/draft-07/schema",
+	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "http://example.com/example.json",
 	"title": "Sample.",
 	"description": "This is a sample configuration settings.",

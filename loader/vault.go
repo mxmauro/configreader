@@ -3,10 +3,17 @@ package loader
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/url"
+	"os"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/mxmauro/configreader/internal/helpers"
@@ -160,6 +167,177 @@ func (l *Vault) WithAuth(auth VaultAuthMethod) *Vault {
 	return l
 }
 
+// WithURL sets the host, port, path and other settings from the provided url
+func (l *Vault) WithURL(rawURL string) *Vault {
+	if l.err == nil {
+		// Parse url
+		if strings.HasPrefix(rawURL, "vault://") {
+			rawURL = "http://" + rawURL[8:]
+		} else if strings.HasPrefix(rawURL, "vaults://") {
+			rawURL = "https://" + rawURL[9:]
+		}
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			l.err = err
+			return l
+		}
+
+		// Replace settings
+		if u.Scheme == "https" {
+			_ = l.WithDefaultTLS()
+		} else if u.Scheme == "http" {
+			_ = l.WithTLS(nil)
+		} else {
+			l.err = errors.New("unsupported scheme")
+			return l
+		}
+
+		_ = l.WithHost(u.Host)
+
+		_ = l.WithPath(u.Path)
+
+		query := u.Query()
+
+		// Get and validate path locations to read
+		locations := parsePathParam(query["path"])
+		if len(locations) == 0 {
+			l.err = errors.New("invalid Vault url (path not specified or invalid)")
+			return l
+		}
+
+		// Figure out the auth login mount path
+		mountPath := query.Get("mountPath")
+
+		// Check if a role name was provided
+		roleName := query.Get("roleName")
+
+		// Check if AppRole credentials were provided (both or none must be specified)
+		roleID := query.Get("roleId")
+		secretID := query.Get("secretId")
+
+		// Determine the auth method (or autodetect)
+		method := query.Get("method")
+		if len(method) > 0 {
+			if method != "approle" && method != "iam" && method != "k8s" {
+				l.err = errors.New("invalid Vault url (method not supported)")
+				return l
+			}
+		} else {
+			// Try to guess
+			if len(roleID) > 0 && len(secretID) > 0 {
+				method = "approle"
+			} else if len(os.Getenv("KUBERNETES_SERVICE_HOST")) > 0 {
+				method = "k8s"
+			} else if len(os.Getenv("EC2_INSTANCE_ID")) > 0 || len(os.Getenv("ECS_CONTAINER_METADATA_URI_V4")) > 0 {
+				method = "iam"
+			} else {
+				var req *http.Request
+				var resp *http.Response
+
+				client := http.Client{
+					Transport: httpTransport,
+				}
+
+				// Create a new request
+				req, err = http.NewRequest("GET", "http://169.254.169.254/latest/meta-data/", nil)
+				if err != nil {
+					l.err = err
+					return l
+				}
+
+				// Execute request
+				ctxWithTimeout, ctxCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer ctxCancel()
+
+				resp, err = client.Do(req.WithContext(ctxWithTimeout))
+				if resp != nil && resp.Body != nil {
+					defer func() {
+						_ = resp.Body.Close()
+					}()
+				}
+
+				// If no error, no matter the reason, we are on something running at AWS
+				if err == nil {
+					method = "iam"
+				}
+			}
+		}
+
+		// Prepare payload and set mount path if not provided
+		switch method {
+		case "approle":
+			if len(roleID) == 0 || len(secretID) == 0 {
+				l.err = errors.New("invalid Vault url (both roleId and secretId parameters are required)")
+				return l
+			}
+
+			auth := NewVaultAppRoleAuthMethod()
+
+			auth.WithRoleId(roleID)
+			auth.WithSecretId(secretID)
+
+			if len(mountPath) > 0 {
+				auth.WithMountPath(mountPath)
+			} else {
+				auth.WithMountPath("approle")
+			}
+
+			l.WithAuth(auth)
+
+		case "k8s":
+			if len(roleName) == 0 {
+				l.err = errors.New("invalid Vault url (roleName parameter is required)")
+				return l
+			}
+
+			auth := NewVaultKubernetesAuthMethod()
+
+			auth.WithRole(roleName)
+
+			if len(mountPath) > 0 {
+				auth.WithMountPath(mountPath)
+			} else {
+				auth.WithMountPath("kubernetes")
+			}
+
+			l.WithAuth(auth)
+
+		case "iam":
+			if len(roleName) == 0 {
+				l.err = errors.New("invalid Vault url (roleName parameter is required)")
+				return l
+			}
+
+			auth := NewVaultAwsAuthMethod()
+
+			auth.WithRole(roleName)
+
+			auth.WithTypeIAM()
+
+			serverId := query.Get("serverId")
+			if len(serverId) > 0 {
+				auth.WithIamServerID(serverId)
+			}
+
+			region := query.Get("region")
+			if len(region) > 0 {
+				auth.WithRegion(region)
+			}
+
+			if len(mountPath) > 0 {
+				auth.WithMountPath(mountPath)
+			} else {
+				auth.WithMountPath("aws")
+			}
+
+			l.WithAuth(auth)
+		}
+	}
+
+	// Done
+	return l
+}
+
 // Load loads the content from Vault
 func (l *Vault) Load(ctx context.Context) ([]byte, error) {
 	var secret *api.Secret
@@ -209,4 +387,51 @@ func (l *Vault) Load(ctx context.Context) ([]byte, error) {
 
 	// Done
 	return buf.Bytes(), nil
+}
+
+func parsePathParam(values []string) []string {
+	// No path? Error
+	if len(values) == 0 {
+		return nil
+	}
+
+	multiSlashRegex := regexp.MustCompile(`/+`)
+
+	finalPaths := make([]string, 0)
+	keyCheckMap := make(map[string]struct{})
+
+	for _, value := range values {
+		value = strings.Replace(value, "\\", "/", -1)
+		value = multiSlashRegex.ReplaceAllString(value, "/")
+
+		// Path does not start with a slash? Error
+		if !strings.HasPrefix(value, "/") {
+			return nil
+		}
+
+		// Path ends with a slash? Remove it
+		if strings.HasSuffix(value, "/") {
+			value = value[:len(value)-1]
+		}
+
+		// Path is empty or root? Error
+		if len(value) == 0 || value == "/" {
+			return nil
+		}
+
+		// Ignore duplicate path
+		hasher := sha256.New()
+		_, _ = hasher.Write([]byte(value))
+		hash := hex.EncodeToString(hasher.Sum(nil))
+		if _, ok := keyCheckMap[hash]; ok {
+			continue
+		}
+		keyCheckMap[hash] = struct{}{}
+
+		// Add this path
+		finalPaths = append(finalPaths, value)
+	}
+
+	// Done
+	return finalPaths
 }

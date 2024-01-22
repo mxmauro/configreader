@@ -177,7 +177,7 @@ ExecuteLogin:
 	secret, err := client.apiClient.Logical().ReadWithContext(ctx, path)
 	if err != nil {
 		// If we get access denied but no login was executed, then it may happen we were renewing the token
-		// near to expiration and it was still pending to process.
+		// near to expiration, and it was still pending to process.
 		// In this case, assume we need to log in again. Worker code will ignore a potential renewed token.
 		if origNeedLogin == false && apiResponseStatusCode(err) == 403 {
 			client.needLogin = true
