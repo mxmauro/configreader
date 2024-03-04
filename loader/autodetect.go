@@ -3,7 +3,6 @@ package loader
 import (
 	"errors"
 	"os"
-	"runtime"
 	"strings"
 )
 
@@ -114,12 +113,7 @@ func NewAutoDetect(opts AutoDetectOptions) Loader {
 		for ofs < len(location) && location[ofs] == '/' {
 			ofs += 1
 		}
-
-		if runtime.GOOS != "windows" {
-			location = "/" + location[ofs:]
-		} else {
-			location = location[ofs:]
-		}
+		location = "file:" + strings.Repeat("/", fileSlashesCount) + location[ofs:]
 	}
 
 	loader := NewFile()
