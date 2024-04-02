@@ -8,12 +8,28 @@ import (
 	"github.com/mxmauro/configreader"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
-func ScopedEnvVar(varName string) func() {
-	origValue := os.Getenv(varName)
+func ScopedEnvVars(vars map[string]string) func() {
+	origVars := make(map[string]string)
+	for k, v := range vars {
+		origV, ok := os.LookupEnv(k)
+		if ok {
+			origVars[k] = "*" + origV
+		} else {
+			origVars[k] = ""
+		}
+		_ = os.Setenv(k, v)
+	}
+
 	return func() {
-		_ = os.Setenv(varName, origValue)
+		for k, v := range origVars {
+			if len(v) > 0 {
+				_ = os.Setenv(k, v[1:])
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}
 	}
 }
 
@@ -23,7 +39,7 @@ func DumpValidationErrors(t *testing.T, err error) {
 	if errors.As(err, &vErr) {
 		t.Logf("validation errors:")
 		for _, f := range vErr.Failures {
-			t.Logf("  %v @ %v", f.Message, f.Location)
+			t.Logf("  %s", f.Error())
 		}
 	}
 }

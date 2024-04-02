@@ -34,7 +34,7 @@ func (a *VaultKubernetesAuth) WithRole(role string) *VaultKubernetesAuth {
 	if a.err == nil {
 		var err error
 
-		role, err = helpers.LoadAndReplaceEnvs(role)
+		role, err = helpers.ExpandEnvVars(role)
 		if err == nil {
 			a.role = role
 		} else {
@@ -47,7 +47,7 @@ func (a *VaultKubernetesAuth) WithRole(role string) *VaultKubernetesAuth {
 // WithAccountToken sets the account access token
 func (a *VaultKubernetesAuth) WithAccountToken(token string) *VaultKubernetesAuth {
 	if a.err == nil {
-		token, a.err = helpers.LoadAndReplaceEnvs(token)
+		token, a.err = helpers.ExpandEnvVars(token)
 		if a.err == nil {
 			a.accountToken = token
 		}
@@ -58,7 +58,7 @@ func (a *VaultKubernetesAuth) WithAccountToken(token string) *VaultKubernetesAut
 // WithMountPath sets an optional mount path. Defaults to kubernetes
 func (a *VaultKubernetesAuth) WithMountPath(mountPath string) *VaultKubernetesAuth {
 	if a.err == nil {
-		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		mountPath, a.err = helpers.ExpandEnvVars(mountPath)
 		if a.err == nil {
 			a.mountPath = mountPath
 		}

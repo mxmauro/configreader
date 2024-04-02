@@ -30,7 +30,7 @@ func NewVaultAzureAuthMethod() *VaultAzureAuth {
 // WithRole sets the role
 func (a *VaultAzureAuth) WithRole(role string) *VaultAzureAuth {
 	if a.err == nil {
-		role, a.err = helpers.LoadAndReplaceEnvs(role)
+		role, a.err = helpers.ExpandEnvVars(role)
 		if a.err == nil {
 			a.role = role
 		}
@@ -41,7 +41,7 @@ func (a *VaultAzureAuth) WithRole(role string) *VaultAzureAuth {
 // WithResource sets an optional different resource URL. Defaults to Azure Public Cloud's ARM URL
 func (a *VaultAzureAuth) WithResource(url string) *VaultAzureAuth {
 	if a.err == nil {
-		url, a.err = helpers.LoadAndReplaceEnvs(url)
+		url, a.err = helpers.ExpandEnvVars(url)
 		if a.err == nil {
 			a.resource = url
 		}
@@ -52,7 +52,7 @@ func (a *VaultAzureAuth) WithResource(url string) *VaultAzureAuth {
 // WithMountPath sets an optional mount path. Defaults to azure
 func (a *VaultAzureAuth) WithMountPath(mountPath string) *VaultAzureAuth {
 	if a.err == nil {
-		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		mountPath, a.err = helpers.ExpandEnvVars(mountPath)
 		if a.err == nil {
 			a.mountPath = mountPath
 		}

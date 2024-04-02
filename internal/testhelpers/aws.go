@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func EnsureAwsEC2Instance(t *testing.T) {
 	// Check if the environment variable AWS_EC2_METADATA_DISABLED is set.

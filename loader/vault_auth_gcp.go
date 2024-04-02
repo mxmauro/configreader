@@ -42,7 +42,7 @@ func (a *VaultGcpAuth) WithRole(role string) *VaultGcpAuth {
 	if a.err == nil {
 		var err error
 
-		role, err = helpers.LoadAndReplaceEnvs(role)
+		role, err = helpers.ExpandEnvVars(role)
 		if err == nil {
 			a.role = role
 		} else {
@@ -89,7 +89,7 @@ func (a *VaultGcpAuth) WithTypeIAM() *VaultGcpAuth {
 // WithIamServiceAccountEmail sets the service account email for IAM authentication type
 func (a *VaultGcpAuth) WithIamServiceAccountEmail(email string) *VaultGcpAuth {
 	if a.err == nil {
-		email, a.err = helpers.LoadAndReplaceEnvs(email)
+		email, a.err = helpers.ExpandEnvVars(email)
 		if a.err == nil {
 			a.iamServiceAccountEmail = email
 		}
@@ -100,7 +100,7 @@ func (a *VaultGcpAuth) WithIamServiceAccountEmail(email string) *VaultGcpAuth {
 // WithMountPath sets an optional mount path. Defaults to gcp
 func (a *VaultGcpAuth) WithMountPath(mountPath string) *VaultGcpAuth {
 	if a.err == nil {
-		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		mountPath, a.err = helpers.ExpandEnvVars(mountPath)
 		if a.err == nil {
 			a.mountPath = mountPath
 		}

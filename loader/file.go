@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mxmauro/configreader/internal/helpers"
+	"github.com/mxmauro/configreader/model"
 )
 
 // -----------------------------------------------------------------------------
@@ -86,7 +88,7 @@ func (l *File) WithFilename(filename string) *File {
 
 // Load loads the content from the file
 // NOTE: We are not making use of the context assuming configuration files will be small and on a local disk
-func (l *File) Load(_ context.Context) ([]byte, error) {
+func (l *File) Load(_ context.Context) (model.Values, error) {
 	// If an error was set by a With... function, return it
 	if l.err != nil {
 		return nil, l.err
@@ -98,13 +100,24 @@ func (l *File) Load(_ context.Context) ([]byte, error) {
 	}
 
 	// Load file
-	return os.ReadFile(l.filename)
+	content, err := os.ReadFile(l.filename)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse data
+	if strings.HasSuffix(l.filename, ".env") {
+		return parseData(content, parseDataHintIsDotEnv)
+	}
+	return parseData(content, 0)
 }
+
+// -----------------------------------------------------------------------------
 
 func expandAndNormalizeFilename(filename string) (string, error) {
 	var err error
 
-	filename, err = helpers.LoadAndReplaceEnvs(filename)
+	filename, err = helpers.ExpandEnvVars(filename)
 	if err != nil {
 		return "", err
 	}

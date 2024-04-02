@@ -3,6 +3,8 @@ package loader
 import (
 	"context"
 	"errors"
+
+	"github.com/mxmauro/configreader/model"
 )
 
 // -----------------------------------------------------------------------------
@@ -12,7 +14,7 @@ type Callback struct {
 	callback CallbackFunc
 }
 
-type CallbackFunc func(ctx context.Context) ([]byte, error)
+type CallbackFunc func(ctx context.Context) (model.Values, error)
 
 // -----------------------------------------------------------------------------
 
@@ -28,7 +30,7 @@ func (l *Callback) WithCallback(callback CallbackFunc) *Callback {
 }
 
 // Load loads the content from the callback
-func (l *Callback) Load(ctx context.Context) ([]byte, error) {
+func (l *Callback) Load(ctx context.Context) (model.Values, error) {
 	if l.callback == nil {
 		return nil, errors.New("callback not set")
 	}

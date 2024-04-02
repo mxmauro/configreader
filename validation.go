@@ -1,10 +1,11 @@
 package configreader
 
 import (
-	"bytes"
 	"errors"
+	"fmt"
+	"strings"
 
-	"github.com/santhosh-tekuri/jsonschema"
+	"github.com/go-playground/validator/v10"
 )
 
 // -----------------------------------------------------------------------------
@@ -16,55 +17,48 @@ type ValidationError struct {
 
 // ValidationErrorFailure represents a specific JSON schema validation error.
 type ValidationErrorFailure struct {
-	Location string
-	Message  string
+	Field string
+	Tag   string
 }
 
 // -----------------------------------------------------------------------------
 
 func (e *ValidationError) Error() string {
-	desc := "validation failed"
-	if len(e.Failures) > 0 {
-		desc = " / " + e.Failures[0].Message + " @ " + e.Failures[0].Location
+	sb := strings.Builder{}
+	_, _ = sb.WriteString("validation failed")
+	for idx := range e.Failures {
+		_, _ = sb.WriteString(fmt.Sprintf(" [%d:%s]", idx+1, e.Failures[idx].Error()))
 	}
-	return desc
+	return sb.String()
 }
 
 func (*ValidationError) Unwrap() error {
 	return nil
 }
 
+func (e *ValidationErrorFailure) Error() string {
+	return fmt.Sprintf("unable to validate '%s' on field '%s'", e.Tag, e.Field)
+}
+
 // -----------------------------------------------------------------------------
 
-func (cr *ConfigReader[T]) validate(encodedSettings []byte) error {
-	// Validate against a schema if one is provided
-	if len(cr.schema) > 0 {
-		var rs *jsonschema.Schema
+func (cr *ConfigReader[T]) validate(settings *T) error {
+	// Execute validation
+	validate := validator.New(validator.WithRequiredStructEnabled())
+	err := validate.Struct(settings)
+	if err != nil {
+		var validationErr validator.ValidationErrors
 
-		schema := []byte(cr.schema)
-
-		// Remove comments from schema
-		schema = removeComments(schema)
-
-		// Decode it
-		compiler := jsonschema.NewCompiler()
-		err := compiler.AddResource("schema.json", bytes.NewReader(schema))
-		if err != nil {
-			return err
+		if errors.As(err, &validationErr) {
+			return newValidationError(validationErr)
 		}
-		rs, err = compiler.Compile("schema.json")
-		if err != nil {
-			return err
-		}
+		return err
+	}
 
-		// Execute validation
-		err = rs.Validate(bytes.NewReader(encodedSettings))
+	// Execute the extended validation if one was specified
+	if cr.extendedValidator != nil {
+		err = cr.extendedValidator(settings)
 		if err != nil {
-			var validationErr *jsonschema.ValidationError
-
-			if errors.As(err, &validationErr) {
-				return newValidationError(validationErr)
-			}
 			return err
 		}
 	}
@@ -73,14 +67,16 @@ func (cr *ConfigReader[T]) validate(encodedSettings []byte) error {
 	return nil
 }
 
-func newValidationError(validationErr *jsonschema.ValidationError) error {
+// -----------------------------------------------------------------------------
+
+func newValidationError(validationErr validator.ValidationErrors) error {
 	err := &ValidationError{
-		Failures: make([]ValidationErrorFailure, len(validationErr.Causes)),
+		Failures: make([]ValidationErrorFailure, len(validationErr)),
 	}
 
-	for idx, e := range validationErr.Causes {
-		err.Failures[idx].Location = e.SchemaPtr
-		err.Failures[idx].Message = e.Message
+	for idx, e := range validationErr {
+		err.Failures[idx].Field = e.Field()
+		err.Failures[idx].Tag = e.Tag()
 	}
 
 	return err

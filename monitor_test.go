@@ -2,22 +2,22 @@ package configreader_test
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mxmauro/configreader"
 	"github.com/mxmauro/configreader/loader"
+	"github.com/mxmauro/configreader/model"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 type MonitorTest struct {
-	Value int `json:"value"`
+	Value int `config:"TEST_VALUE"`
 }
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func TestMonitor(t *testing.T) {
 	var value int32 = 1
@@ -34,9 +34,10 @@ func TestMonitor(t *testing.T) {
 
 	// Load configuration
 	settings, err := configreader.New[MonitorTest]().
-		WithLoader(loader.NewCallback().WithCallback(func(_ context.Context) ([]byte, error) {
-			data := fmt.Sprintf(`{ "value": %v }`, atomic.LoadInt32(&value))
-			return []byte(data), nil
+		WithLoader(loader.NewCallback().WithCallback(func(_ context.Context) (model.Values, error) {
+			ret := make(model.Values)
+			ret["TEST_VALUE"] = atomic.LoadInt32(&value)
+			return ret, nil
 		})).
 		WithMonitor(settingsMonitor).
 		Load(context.Background())

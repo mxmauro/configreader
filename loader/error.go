@@ -2,6 +2,8 @@ package loader
 
 import (
 	"context"
+
+	"github.com/mxmauro/configreader/model"
 )
 
 // -----------------------------------------------------------------------------
@@ -12,6 +14,6 @@ type errorLoader struct {
 
 // -----------------------------------------------------------------------------
 
-func (l *errorLoader) Load(_ context.Context) (data []byte, err error) {
+func (l *errorLoader) Load(_ context.Context) (model.Values, error) {
 	return nil, l.err
 }

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"strings"
+
+	"github.com/mxmauro/configreader/model"
 )
 
 // -----------------------------------------------------------------------------
@@ -36,7 +38,7 @@ type TlsEnvVarNames struct {
 // -----------------------------------------------------------------------------
 
 // NewAutoDetect tries to create a new loader based on the origin type, like a file or Hashicorp Vault
-func NewAutoDetect(opts AutoDetectOptions) Loader {
+func NewAutoDetect(opts AutoDetectOptions) model.Loader {
 	location := ""
 
 	// Try to get the location from the command line options

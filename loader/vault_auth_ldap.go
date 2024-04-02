@@ -30,7 +30,7 @@ func NewVaultLdapAuthMethod() *VaultLdapAuth {
 // WithUsername sets the username
 func (a *VaultLdapAuth) WithUsername(userName string) *VaultLdapAuth {
 	if a.err == nil {
-		userName, a.err = helpers.LoadAndReplaceEnvs(userName)
+		userName, a.err = helpers.ExpandEnvVars(userName)
 		if a.err == nil {
 			a.userName = userName
 		}
@@ -41,7 +41,7 @@ func (a *VaultLdapAuth) WithUsername(userName string) *VaultLdapAuth {
 // WithPassword sets the access password
 func (a *VaultLdapAuth) WithPassword(password string) *VaultLdapAuth {
 	if a.err == nil {
-		password, a.err = helpers.LoadAndReplaceEnvs(password)
+		password, a.err = helpers.ExpandEnvVars(password)
 		if a.err == nil {
 			a.password = password
 		}
@@ -52,7 +52,7 @@ func (a *VaultLdapAuth) WithPassword(password string) *VaultLdapAuth {
 // WithMountPath sets an optional mount path. Defaults to ldap
 func (a *VaultLdapAuth) WithMountPath(mountPath string) *VaultLdapAuth {
 	if a.err == nil {
-		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		mountPath, a.err = helpers.ExpandEnvVars(mountPath)
 		if a.err == nil {
 			a.mountPath = mountPath
 		}

@@ -9,13 +9,13 @@ import (
 	"github.com/hashicorp/vault/api"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 const (
 	VaultReadSecretPolicy = "read-secret-policy"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func EnsureVaultAvailability(t *testing.T) string {
 	// Get vault address
@@ -53,7 +53,7 @@ func CreateRootVaultClient(t *testing.T, vaultAddr string) *api.Client {
 		Address: "http://" + vaultAddr,
 	})
 	if err != nil {
-		t.Fatalf("unable to create Vault client [err=%v]", err)
+		t.Fatalf("unable to create Vault client [err=%v]", err.Error())
 	}
 	client.SetToken("root")
 
@@ -64,19 +64,21 @@ path "secret/data/*" {
 }
 `)
 	if err != nil {
-		t.Fatalf("unable to create the read secret policy [err=%v]", err)
+		t.Fatalf("unable to create the read secret policy [err=%v]", err.Error())
 	}
 
 	// Done
 	return client
 }
 
-func WriteVaultSecret(t *testing.T, client *api.Client, key string, secret string) {
+func WriteVaultSecrets(t *testing.T, client *api.Client, key string, secrets map[string]interface{}) {
 	// Write the test secret. NOTE: We are following the K/V v2 specs here.
-	value := `{ "data": ` + secret + `}`
-	_, err := client.Logical().WriteBytes(PathFromSecretKey(key), []byte(value))
+	data := map[string]interface{}{
+		"data": secrets,
+	}
+	_, err := client.Logical().Write(PathFromSecretKey(key), data)
 	if err != nil {
-		t.Fatalf("unable to write Vault [key=%v] [err=%v]", key, err)
+		t.Fatalf("unable to write Vault [key=%v] [err=%v]", key, err.Error())
 	}
 }
 

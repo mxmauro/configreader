@@ -1,23 +1,24 @@
 package configreader
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha512"
-	"encoding/json"
-	"errors"
+	"encoding/gob"
+	"slices"
 
 	"github.com/mxmauro/configreader/internal/helpers"
 	"github.com/mxmauro/configreader/loader"
+	"github.com/mxmauro/configreader/model"
 )
 
 // -----------------------------------------------------------------------------
 
 // ConfigReader contains configurable loader options.
 type ConfigReader[T any] struct {
-	loader            loader.Loader
-	schema            string
-	extendedValidator ExtendedValidator[T]
-	noReplaceEnvVars  bool
+	loader                []model.Loader
+	extendedValidator     ExtendedValidator[T]
+	disableEnvVarOverride []string
 
 	monitor *Monitor[T]
 
@@ -27,28 +28,30 @@ type ConfigReader[T any] struct {
 // ExtendedValidator is a function to call in order to do configuration validation not covered by this library.
 type ExtendedValidator[T any] func(settings *T) error
 
-// SettingsChangedCallback is a function to call when the reloader detects a change in the configuration settings.
+// SettingsChangedCallback is a function to call when the re-loader detects a change in the configuration settings.
 type SettingsChangedCallback[T any] func(settings *T, loadErr error)
-
-//------------------------------------------------------------------------------
 
 // New creates a new configuration reader
 func New[T any]() *ConfigReader[T] {
-	return &ConfigReader[T]{}
+	cfg := ConfigReader[T]{}
+
+	// Check if T is a struct
+	err := cfg.checkT()
+	if err != nil {
+		panic(err)
+	}
+
+	// Done
+	return &cfg
 }
 
 // WithLoader sets the content loader
-func (cr *ConfigReader[T]) WithLoader(l loader.Loader) *ConfigReader[T] {
+func (cr *ConfigReader[T]) WithLoader(l ...model.Loader) *ConfigReader[T] {
 	if cr.err == nil {
-		cr.loader = l
-	}
-	return cr
-}
-
-// WithSchema sets an optional JSON schema validator
-func (cr *ConfigReader[T]) WithSchema(schema string) *ConfigReader[T] {
-	if cr.err == nil {
-		cr.schema = schema
+		if cr.loader == nil {
+			cr.loader = make([]model.Loader, 0)
+		}
+		cr.loader = append(cr.loader, l...)
 	}
 	return cr
 }
@@ -61,10 +64,13 @@ func (cr *ConfigReader[T]) WithExtendedValidator(validator ExtendedValidator[T])
 	return cr
 }
 
-// WithNoReplaceEnvVars stops the loader from replacing environment variables that can be found inside
-func (cr *ConfigReader[T]) WithNoReplaceEnvVars() *ConfigReader[T] {
+// WithDisableEnvVarOverride stops the loader from replacing environment variables that can be found inside
+func (cr *ConfigReader[T]) WithDisableEnvVarOverride(vars ...string) *ConfigReader[T] {
 	if cr.err == nil {
-		cr.noReplaceEnvVars = true
+		if cr.disableEnvVarOverride == nil {
+			cr.disableEnvVarOverride = make([]string, 0)
+		}
+		cr.disableEnvVarOverride = append(cr.disableEnvVarOverride, vars...)
 	}
 	return cr
 }
@@ -81,10 +87,6 @@ func (cr *ConfigReader[T]) WithMonitor(m *Monitor[T]) *ConfigReader[T] {
 
 // Load settings from the specified source
 func (cr *ConfigReader[T]) Load(ctx context.Context) (*T, error) {
-	var hashOfEncodedSettings [64]byte
-	var settings *T
-	var err error
-
 	// If an error was set by a With... function, return it
 	if cr.err != nil {
 		return nil, cr.err
@@ -95,20 +97,15 @@ func (cr *ConfigReader[T]) Load(ctx context.Context) (*T, error) {
 		ctx = context.Background()
 	}
 
-	// Check if a loader was specified
-	if cr.loader == nil {
-		return nil, newConfigLoadError(errors.New("loader not defined"))
-	}
-
 	// Load the whole data
-	settings, hashOfEncodedSettings, err = cr.load(ctx)
+	settings, settingsHash, err := cr.load(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Start re-loader goroutine if provided
 	if cr.monitor != nil {
-		err = cr.monitor.start(cr, hashOfEncodedSettings)
+		err = cr.monitor.start(cr, settingsHash)
 		if err != nil {
 			return nil, err
 		}
@@ -119,63 +116,82 @@ func (cr *ConfigReader[T]) Load(ctx context.Context) (*T, error) {
 }
 
 func (cr *ConfigReader[T]) load(ctx context.Context) (*T, [64]byte, error) {
-	var settings *T
+	var hash [64]byte
 
 	// Load the whole data
-	encodedSettings, err := cr.loader.Load(ctx)
+	values, err := cr.loadValues(ctx)
 	if err != nil {
-		return nil, [64]byte{}, newConfigLoadError(err)
+		return nil, hash, newConfigLoadError(err)
 	}
 
-	// Replace environment variables inside the resulting json
-	if !cr.noReplaceEnvVars {
-		encodedSettings, err = helpers.LoadAndReplaceEnvsByte(encodedSettings)
-		if err != nil {
-			return nil, [64]byte{}, newConfigLoadError(err)
-		}
-	}
-
-	// Remove comments from json
-	encodedSettings = removeComments(encodedSettings)
-
-	// If resulting configuration is empty, throw error
-	if len(encodedSettings) == 0 {
-		return nil, [64]byte{}, newConfigLoadError(errors.New("empty data"))
-	}
-
-	// Do final validation and decoding
-	err = cr.validate(encodedSettings)
+	// Decode settings
+	settings := new(T)
+	err = cr.fillFields(settings, values)
 	if err != nil {
-		return nil, [64]byte{}, newConfigLoadError(err)
+		return nil, hash, newConfigLoadError(err)
 	}
 
-	// Do final validation and decoding
-	settings, err = cr.decode(encodedSettings)
+	// Validate settings
+	err = cr.validate(settings)
 	if err != nil {
-		return nil, [64]byte{}, newConfigLoadError(err)
+		return nil, hash, newConfigLoadError(err)
+	}
+
+	// Calculate hash
+	hash, err = cr.calcHash(settings)
+	if err != nil {
+		return nil, hash, newConfigLoadError(err)
 	}
 
 	// Done
-	return settings, sha512.Sum512(encodedSettings), nil
+	return settings, hash, nil
 }
 
-func (cr *ConfigReader[T]) decode(encodedSettings []byte) (*T, error) {
-	var settings T
-
-	// Parse configuration settings json object
-	err := json.Unmarshal(encodedSettings, &settings)
-	if err != nil {
-		return nil, err
-	}
-
-	// Execute the extended validation if one was specified
-	if cr.extendedValidator != nil {
-		err = cr.extendedValidator(&settings)
+func (cr *ConfigReader[T]) loadValues(ctx context.Context) (model.Values, error) {
+	// Load the whole data
+	mergedValues := make(model.Values)
+	for _, l := range cr.loader {
+		values, err := l.Load(ctx)
 		if err != nil {
 			return nil, err
 		}
+		for k, v := range values {
+			mergedValues[k] = v
+		}
+	}
+
+	// Merge environment variables
+	for k, v := range loader.GetEnvVars() {
+		if !slices.Contains(cr.disableEnvVarOverride, k) {
+			mergedValues[k] = v
+		}
+	}
+
+	// Expand nested expressions
+	for k, v := range mergedValues {
+		replacement, replaced, err := helpers.Expand(v, mergedValues)
+		if err != nil {
+			return nil, err
+		}
+		if replaced {
+			mergedValues[k] = replacement
+		}
 	}
 
 	// Done
-	return &settings, nil
+	return mergedValues, nil
+}
+
+func (cr *ConfigReader[T]) calcHash(setting *T) ([64]byte, error) {
+	buf := bytes.Buffer{}
+	encoder := gob.NewEncoder(&buf)
+
+	// Encode
+	err := encoder.Encode(setting)
+	if err != nil {
+		return [64]byte{}, err
+	}
+
+	// Calculate hash
+	return sha512.Sum512(buf.Bytes()), nil
 }

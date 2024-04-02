@@ -10,17 +10,16 @@ import (
 	"github.com/mxmauro/configreader/loader"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func TestVaultLoaderWithAwsAuth(t *testing.T) {
 	testhelpers.EnsureAwsEC2Instance(t)
-	/*
-		t.Logf("please execute this command in order to run Vault tests:")
-		t.Logf(`    vault server -dev -dev-root-token-id="root" --dev-no-store-token`)
 
-		* ec2:DescribeInstances
-		* iam:GetInstanceProfile (if IAM Role binding is used)
-	*/
+	//	t.Logf("please execute this command in order to run Vault tests:")
+	//	t.Logf(`    vault server -dev -dev-root-token-id="root" --dev-no-store-token`)
+	//
+	//	* ec2:DescribeInstances
+	//	* iam:GetInstanceProfile (if IAM Role binding is used)
 
 	// Check if vault is running
 	vaultAddr := testhelpers.EnsureVaultAvailability(t)
@@ -39,7 +38,7 @@ func TestVaultLoaderWithAwsAuth(t *testing.T) {
 	testhelpers.CreateAwsRoleForReadSecretPolicy(t, client)
 
 	// Write the secrets
-	testhelpers.WriteVaultSecret(t, client, "settings", testhelpers.GoodSettingsJSON)
+	testhelpers.WriteVaultSecrets(t, client, "settings", testhelpers.GoodSettingsMap)
 
 	// Load configuration from vault using AWS
 	settings, err := configreader.New[testhelpers.TestSettings]().
@@ -52,7 +51,6 @@ func TestVaultLoaderWithAwsAuth(t *testing.T) {
 				WithPKCS7Signature().
 				WithRegion("us-east-1").
 				WithNonce(""))).
-		WithSchema(testhelpers.SchemaJSON).
 		Load(context.Background())
 	if err != nil {
 		t.Fatalf(err.Error())

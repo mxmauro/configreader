@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"os"
+
+	"github.com/mxmauro/configreader/model"
 )
 
 // -----------------------------------------------------------------------------
 
 // Memory wraps content to be loaded from a string
 type Memory struct {
-	data []byte
+	data model.Values
 
 	err error
 }
@@ -30,7 +32,7 @@ func NewMemoryFromEnvironmentVariable(Name string) *Memory {
 	if ok {
 		if len(data) > 0 {
 			// Make a copy of the source data, so we can safely manipulate it
-			l.data = []byte(data)
+			l.data, l.err = parseData([]byte(data), 0)
 		} else {
 			l.err = errors.New("environment variable '" + Name + "' is empty")
 		}
@@ -43,21 +45,24 @@ func NewMemoryFromEnvironmentVariable(Name string) *Memory {
 }
 
 // WithData sets the data to return when the content is loaded
-func (l *Memory) WithData(data string) *Memory {
+func (l *Memory) WithData(data model.Values) *Memory {
 	if l.err == nil {
 		// Make a copy of the source data, so we can safely manipulate it
-		l.data = []byte(data)
+		l.data = data
 	}
 	return l
 }
 
 // Load loads the content from the file
-func (l *Memory) Load(_ context.Context) ([]byte, error) {
+func (l *Memory) Load(_ context.Context) (model.Values, error) {
 	// If an error was set by a With... function, return it
 	if l.err != nil {
 		return nil, l.err
 	}
 
-	// Return content
-	return l.data, nil
+	// Return values
+	if l.data != nil {
+		return l.data, nil
+	}
+	return make(model.Values), nil
 }

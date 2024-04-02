@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/vault/api"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 const (
 	VaultAppRoleRoleName = "test-approle"
@@ -16,7 +16,7 @@ const (
 	VaultAppRoleRenewPolicy = "approle-renew-policy"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func EnableAppRoleAuthEngine(t *testing.T, client *api.Client) {
 	// Enable AppRole auth method
@@ -42,15 +42,13 @@ path "/auth/token/renew-self" {
 	if err != nil {
 		t.Fatalf("unable to create the auth token self renew policy [err=%v]", err)
 	}
-	/*
-		var apiErr *api.ResponseError
 
-		if !(errors.As(err, &apiErr) && apiErr.StatusCode == 400 && len(apiErr.Errors) > 0 &&
-			strings.Contains(apiErr.Errors[0], "already in use")) {
-			t.Fatalf("unable to enable AppRole auth [err=%v]", err)
-		}
-
-	*/
+	//	var apiErr *api.ResponseError
+	//
+	//	if !(errors.As(err, &apiErr) && apiErr.StatusCode == 400 && len(apiErr.Errors) > 0 &&
+	//		strings.Contains(apiErr.Errors[0], "already in use")) {
+	//		t.Fatalf("unable to enable AppRole auth [err=%v]", err)
+	//	}
 }
 
 func CreateAppRoleRoleForReadSecretPolicy(t *testing.T, client *api.Client) {

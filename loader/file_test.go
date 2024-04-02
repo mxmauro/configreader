@@ -2,6 +2,7 @@ package loader_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -11,7 +12,7 @@ import (
 	"github.com/mxmauro/configreader/loader"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func TestFileLoader(t *testing.T) {
 	// Create a new temporary file
@@ -20,20 +21,24 @@ func TestFileLoader(t *testing.T) {
 		t.Fatalf("unable to create temporary file [err=%v]", err)
 	}
 	defer func() {
-		_ = os.Remove(file.Name())
+		filename := file.Name()
+
+		_ = file.Close()
+		_ = os.Remove(filename)
 	}()
 
 	// Save good settings on it
-	_, err = file.Write([]byte(testhelpers.GoodSettingsJSON))
-	if err != nil {
-		t.Fatalf("unable to save good settings json [err=%v]", err)
+	for k, v := range testhelpers.ToStringStringMap(testhelpers.GoodSettingsMap) {
+		_, err = file.WriteString(fmt.Sprintf("%s=%s\n", k, testhelpers.QuoteValue(v)))
+		if err != nil {
+			t.Fatalf("unable to save good settings in a file [err=%v]", err)
+		}
 	}
 
 	// Load configuration from file
 	var settings *testhelpers.TestSettings
 	settings, err = configreader.New[testhelpers.TestSettings]().
 		WithLoader(loader.NewFile().WithFilename(file.Name())).
-		WithSchema(testhelpers.SchemaJSON).
 		Load(context.Background())
 	if err != nil {
 		t.Fatalf(err.Error())

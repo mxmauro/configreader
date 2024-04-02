@@ -22,7 +22,7 @@ type Monitor[T any] struct {
 	wg     sync.WaitGroup
 	stopCh chan struct{}
 
-	hashOfEncodedSettings [64]byte
+	settingsHash [64]byte
 }
 
 // -----------------------------------------------------------------------------
@@ -39,24 +39,21 @@ func NewMonitor[T any](pollInterval time.Duration, callback SettingsChangedCallb
 // Destroy stops a running configuration settings monitor and destroys it
 func (m *Monitor[T]) Destroy() {
 	if m.stopCh != nil {
-		m.stopCh <- struct{}{}
+		close(m.stopCh)
 	}
 
 	m.wg.Wait()
 
-	if m.stopCh != nil {
-		close(m.stopCh)
-		m.stopCh = nil
-	}
+	m.stopCh = nil
 }
 
-func (m *Monitor[T]) start(cr *ConfigReader[T], hashOfEncodedSettings [64]byte) error {
+func (m *Monitor[T]) start(cr *ConfigReader[T], settingsHash [64]byte) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
 	// Check if the configuration reader is already attached to this monitor
 	if m.attachedCr == cr {
-		copy(m.hashOfEncodedSettings[:], hashOfEncodedSettings[:]) // Just update the encoded settings hash
+		copy(m.settingsHash[:], settingsHash[:]) // Just update the encoded settings hash
 		return nil
 	}
 
@@ -67,7 +64,7 @@ func (m *Monitor[T]) start(cr *ConfigReader[T], hashOfEncodedSettings [64]byte) 
 
 	// Attach and create a copy of the encoded settings hash
 	m.attachedCr = cr
-	copy(m.hashOfEncodedSettings[:], hashOfEncodedSettings[:])
+	copy(m.settingsHash[:], settingsHash[:])
 
 	// Start polling
 	m.stopCh = make(chan struct{})
@@ -79,6 +76,8 @@ func (m *Monitor[T]) start(cr *ConfigReader[T], hashOfEncodedSettings [64]byte) 
 }
 
 func (m *Monitor[T]) worker() {
+	defer m.wg.Done()
+
 MainLoop:
 	for {
 		select {
@@ -96,9 +95,6 @@ MainLoop:
 	m.mtx.Lock()
 	m.attachedCr = nil
 	m.mtx.Unlock()
-
-	// Done
-	m.wg.Done()
 }
 
 func (m *Monitor[T]) doReload() bool {
@@ -106,7 +102,7 @@ func (m *Monitor[T]) doReload() bool {
 	defer cancelStopCtx()
 
 	// Load the whole data
-	settings, hashOfEncodedSettings, err := m.attachedCr.load(stopCtx)
+	settings, settingsHash, err := m.attachedCr.load(stopCtx)
 	if err != nil {
 		select {
 		case <-stopCtx.Done():
@@ -122,8 +118,8 @@ func (m *Monitor[T]) doReload() bool {
 	m.mtx.Lock()
 
 	// If encoded settings are the same, do nothing
-	if !bytes.Equal(hashOfEncodedSettings[:], m.hashOfEncodedSettings[:]) {
-		copy(m.hashOfEncodedSettings[:], hashOfEncodedSettings[:])
+	if !bytes.Equal(settingsHash[:], m.settingsHash[:]) {
+		copy(m.settingsHash[:], settingsHash[:])
 		changed = true
 	}
 

@@ -8,9 +8,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/mxmauro/configreader/internal/helpers"
+	"github.com/mxmauro/configreader/model"
 )
 
 // -----------------------------------------------------------------------------
@@ -70,7 +72,7 @@ func NewHttp() *Http {
 // WithHost sets the host address and, optionally, the port
 func (l *Http) WithHost(host string) *Http {
 	if l.err == nil {
-		host, l.err = helpers.LoadAndReplaceEnvs(host)
+		host, l.err = helpers.ExpandEnvVars(host)
 		if l.err == nil {
 			l.host = host
 		}
@@ -81,7 +83,7 @@ func (l *Http) WithHost(host string) *Http {
 // WithPath sets the resource path
 func (l *Http) WithPath(path string) *Http {
 	if l.err == nil {
-		path, l.err = helpers.LoadAndReplaceEnvs(path)
+		path, l.err = helpers.ExpandEnvVars(path)
 		if l.err == nil {
 			l.path = path
 		}
@@ -95,9 +97,9 @@ func (l *Http) WithCredentials(username string, password string) *Http {
 		if len(username) > 0 || len(password) > 0 {
 			var err error
 
-			username, err = helpers.LoadAndReplaceEnvs(username)
+			username, err = helpers.ExpandEnvVars(username)
 			if err == nil {
-				password, err = helpers.LoadAndReplaceEnvs(password)
+				password, err = helpers.ExpandEnvVars(password)
 			}
 			if err == nil {
 				l.credentials = url.UserPassword(username, password)
@@ -125,7 +127,7 @@ func (l *Http) WithQuery(query map[string][]string) *Http {
 
 			copiedValues := make([]string, 0)
 			for _, value := range values {
-				value, err = helpers.LoadAndReplaceEnvs(value)
+				value, err = helpers.ExpandEnvVars(value)
 				if err != nil {
 					break
 				}
@@ -152,7 +154,7 @@ func (l *Http) WithQueryItem(key string, values []string) *Http {
 
 			copiedValues := make([]string, 0)
 			for _, value := range values {
-				value, err = helpers.LoadAndReplaceEnvs(value)
+				value, err = helpers.ExpandEnvVars(value)
 				if err != nil {
 					break
 				}
@@ -186,7 +188,7 @@ func (l *Http) WithHeaders(headers map[string]string) *Http {
 				break
 			}
 
-			value, err = helpers.LoadAndReplaceEnvs(value)
+			value, err = helpers.ExpandEnvVars(value)
 			if err != nil {
 				break
 			}
@@ -210,7 +212,7 @@ func (l *Http) WithHeaderItem(key string, value string) *Http {
 	if l.err == nil {
 		var err error
 
-		value, err = helpers.LoadAndReplaceEnvs(value)
+		value, err = helpers.ExpandEnvVars(value)
 		if err == nil {
 			if l.headers == nil {
 				l.headers = make(map[string]string)
@@ -282,9 +284,8 @@ func (l *Http) WithURL(rawURL string) *Http {
 }
 
 // Load loads the content from the web
-func (l *Http) Load(ctx context.Context) ([]byte, error) {
+func (l *Http) Load(ctx context.Context) (model.Values, error) {
 	var resp *http.Response
-	var err error
 
 	// If an error was set by a With... function, return it
 	if l.err != nil {
@@ -376,6 +377,9 @@ func (l *Http) Load(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 
-	// Done
-	return responseBody, nil
+	// Parse data
+	if strings.HasSuffix(u.Path, ".env") {
+		return parseData(responseBody, parseDataHintIsDotEnv)
+	}
+	return parseData(responseBody, 0)
 }

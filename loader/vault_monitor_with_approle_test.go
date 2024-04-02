@@ -13,13 +13,13 @@ import (
 	"github.com/mxmauro/configreader/loader"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 type MultiMonitorTest struct {
-	Value int `json:"value"`
+	Value int `config:"TEST_VALUE"`
 }
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func TestVaultLoaderMonitoringWithAppRoleAuth(t *testing.T) {
 	// Check if vault is running
@@ -37,8 +37,8 @@ func TestVaultLoaderMonitoringWithAppRoleAuth(t *testing.T) {
 	secretId := testhelpers.CreateAppRoleSecretID(t, client)
 
 	// Write the secrets
-	testhelpers.WriteVaultSecret(t, client, "settings-1", createSettingsWithValue(1000))
-	testhelpers.WriteVaultSecret(t, client, "settings-2", createSettingsWithValue(2000))
+	testhelpers.WriteVaultSecrets(t, client, "settings-1", createMultiMonitorSettingsWithValue(1000))
+	testhelpers.WriteVaultSecrets(t, client, "settings-2", createMultiMonitorSettingsWithValue(2000))
 
 	// cT := testhelpers.NewConcurrentT(t)
 
@@ -95,8 +95,9 @@ func TestVaultLoaderMonitoringWithAppRoleAuth(t *testing.T) {
 					return
 				case <-localCtx.Done():
 					return
-				case <-time.After(time.Duration(2+(workerNo*3)) * time.Second):
-					testhelpers.WriteVaultSecret(t, client, "settings-"+strconv.Itoa(workerNo), createSettingsWithValue((workerNo*1000)+check))
+				case <-time.After(time.Duration(200+(workerNo*400)) * time.Millisecond):
+					testhelpers.WriteVaultSecrets(t, client, "settings-"+strconv.Itoa(workerNo),
+						createMultiMonitorSettingsWithValue((workerNo*1000)+check))
 				}
 			}
 		}(workerNo)
@@ -109,6 +110,10 @@ func TestVaultLoaderMonitoringWithAppRoleAuth(t *testing.T) {
 	}
 }
 
-func createSettingsWithValue(newValue int) string {
-	return fmt.Sprintf(`{ "value": %v }`, newValue)
+// -----------------------------------------------------------------------------
+
+func createMultiMonitorSettingsWithValue(newValue int) map[string]interface{} {
+	ret := make(map[string]interface{})
+	ret["TEST_VALUE"] = newValue
+	return ret
 }

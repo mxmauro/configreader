@@ -4,14 +4,11 @@ Simple configuration reader and validator that accepts a variety of sources.
 
 ### Load behavior
 
-The library starts retrieves data from a [source](#sources) and, optionally, expands embedded environment variables
-delimited by the `%` character.
+The library starts retrieves data from a [source](#sources) and, optionally, expands embedded variables
+delimited by `${` and `}`.
 
-Then, `C-style` comments enclosed by the `/* ... */` delimiters or `//` for single-line comments are removed. At this
-point it is expected to get a well-formed JSON text which can be validated with a [JSON schema](https://json-schema.org/).
-
-At last, the JSON text is decoded into a structure.
-
+The library accepts dotenv files, key/value pairs or JSON objects. Depending on the source type, `C-style` and/or
+`# comment` texts will be removed.
 
 ## Quick start
 
@@ -23,13 +20,13 @@ import (
 )
 ```
 
-2. Create a struct that defines your configuration settings and add the required JSON tags to it.
+2. Create a struct that defines your configuration settings and add the required config and validate tags to it.
 
 ```golang
 type ConfigurationSettings struct {
-    Name         string  `json:"name"`
-    IntegerValue int     `json:"integerValue"`
-    FloatValue   float64 `json:"floatValue"`
+    Name         string  `config:"TEST_NAME" validate:"required"`
+    IntegerValue int     `config:"TEST_INTEGER_VALUE" validate:"required,min=1"`
+    FloatValue   float64 `config:"TEST_FLOAT_VALUE"`
 }
 ```
 
@@ -38,8 +35,7 @@ type ConfigurationSettings struct {
 ```golang
 func main() {
     settings, err := configreader.New[ConfigurationSettings]().
-        WithLoader(loader.NewFile().WithFilename("./config.json")).
-        WithSchema(testhelpers.SchemaJSON).
+        WithLoader(loader.NewFile().WithFilename("./config.env")).
         Load(context.Background())
     if err != nil {
         panic(err.Error())
@@ -60,15 +56,14 @@ reader := configreader.New[{structure-name}]()
 Apply reader options like:
 
 ```golang
-reader.WithLoader(...).WithSchema(...)
+reader.WithLoader(...).WithMonitor(...)
 ````
-| Method                  | Description                                                                                                             |
-|-------------------------|-------------------------------------------------------------------------------------------------------------------------|
-| `WithExtendedValidator` | Sets an optional settings validator callback.                                                                           |
-| `WithLoader`            | Sets the content loader. See the [loader section](#loaders) for details.                                                |
-| `WithMonitor`           | Sets a monitor that will inform about configuration settings changes. See the [monitor section](#monitors) for details. |
-| `WithNoReplaceEnvVars`  | Stops the loader from replacing environment variables that can be found inside.                                         |
-| `WithSchema`            | Sets an optional JSON schema validator.                                                                                 |
+| Method                      | Description                                                                                                             |
+|-----------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| `WithExtendedValidator`     | Sets an optional settings validator callback.                                                                           |
+| `WithLoader`                | Sets the content loader. See the [loader section](#loaders) for details.                                                |
+| `WithMonitor`               | Sets a monitor that will inform about configuration settings changes. See the [monitor section](#monitors) for details. |
+| `WithDisableEnvVarOverride` | Ignore a list of environment variables that can override values.                                                        |
 
 And load the settings:
 
@@ -94,7 +89,17 @@ ld := loader.NewMemory().WithXXX(...).WithXXX(...)....
 reader.WithLoader(ld)
 ```
 
+You can add more than one loader, overlapping values will be overridden as sources are processed.
+
 See [this document](docs/LOADERS.md) for details about the available loaders.
+
+## Validation
+
+Data validation is executed in two phases. The first inspects `validate` tags using the [Go Playground Validator](https://github.com/go-playground/validator)
+library. Please check the full documentation [here](https://pkg.go.dev/github.com/go-playground/validator/v10). 
+
+The second is through the `WithExtendedValidator` method. This library calls the specified function so the developer can
+execute further custom checks.
 
 ## Monitor
 
@@ -127,11 +132,10 @@ settings, err := configreader.New[{structure-name}]().
 
 The callback is called eve
 
-## Environment variables
+## Variable expansion
 
-Strings passed to a With... method of a loader or found within the loaded content, which contains the `%NAME%` pattern
-will try to find the environment variable named `NAME` and replace the tag with its value. Use two (2) consecutive
-`%%` characters to replace with one.
+Once the key/values are loaded, string values containing expansion macros patterns like `${NAME}` will be automatically
+expanded by looking for the specified key.
 
 ## Tests
 

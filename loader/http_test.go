@@ -2,6 +2,7 @@ package loader_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -12,7 +13,7 @@ import (
 	"github.com/mxmauro/configreader/loader"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func TestHttpLoader(t *testing.T) {
 	// Create a test http server
@@ -23,8 +24,10 @@ func TestHttpLoader(t *testing.T) {
 			switch r.URL.Path {
 			case "/settings":
 				w.WriteHeader(http.StatusOK)
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(testhelpers.GoodSettingsJSON))
+				w.Header().Set("Content-Type", "text/plain")
+				for k, v := range testhelpers.ToStringStringMap(testhelpers.GoodSettingsMap) {
+					_, _ = w.Write([]byte(fmt.Sprintf("%s=%s\n", k, testhelpers.QuoteValue(v))))
+				}
 				return
 			}
 		}
@@ -38,7 +41,6 @@ func TestHttpLoader(t *testing.T) {
 	// Load configuration from web
 	settings, err := configreader.New[testhelpers.TestSettings]().
 		WithLoader(loader.NewHttp().WithHost(server.Listener.Addr().String()).WithPath("/settings")).
-		WithSchema(testhelpers.SchemaJSON).
 		Load(context.Background())
 	if err != nil {
 		t.Fatalf(err.Error())

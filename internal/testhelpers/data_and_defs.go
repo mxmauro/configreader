@@ -1,216 +1,132 @@
 package testhelpers
 
-//------------------------------------------------------------------------------
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// -----------------------------------------------------------------------------
 
 type TestSettings struct {
-	Name         string  `json:"name"`
-	IntegerValue int     `json:"integerValue"`
-	FloatValue   float64 `json:"floatValue"`
+	Name              string   `config:"TEST_NAME" validate:"required,min=1,max=64"`
+	PtrToName         *string  `config:"TEST_NAME" validate:"required,min=1,max=64"`
+	IntegerValue      int      `config:"TEST_INTEGER" validate:"required,number"`
+	PtrToIntegerValue *int     `config:"TEST_INTEGER" validate:"required,number"`
+	FloatValue        float64  `config:"TEST_FLOAT" validate:"required,number"`
+	PtrToFloatValue   *float64 `config:"TEST_FLOAT" validate:"required,number"`
 
-	Server TestSettingsServer `json:"server"`
+	Server TestSettingsServer
 
-	Node TestSettingsNode `json:"node"`
+	Node *TestSettingsNode
 
-	MongoDB TestSettingsMongoDB `json:"mongodb"`
+	MongoDB TestSettingsMongoDB
 }
 
 type TestSettingsServer struct {
-	Ip               string   `json:"ip"`
-	Port             int      `json:"port"`
-	PoolSize         int      `json:"poolSize"`
-	AllowedAddresses []string `json:"allowedAddresses"`
+	Ip               string   `config:"TEST_SERVER_IP" validate:"required,ip"`
+	Port             int      `config:"TEST_SERVER_PORT" validate:"required,min=0,max=65535"`
+	PoolSize         int      `config:"TEST_SERVER_POOLSIZE" validate:"required,gte=1"`
+	AllowedAddresses []string `config:"TEST_SERVER_ALLOWED" is-json:"1" validate:"required"`
 }
 
 type TestSettingsNode struct {
-	Url      string `json:"url"`
-	ApiToken string `json:"apiToken"`
+	Url      string `config:"TEST_NODE_URL" validate:"required,url"`
+	ApiToken string `config:"TEST_NODE_APITOKEN" validate:"required,ascii,min=1,max=64"`
 }
 
 type TestSettingsMongoDB struct {
-	Url string `json:"url"`
+	Url string `config:"TEST_MONGODB_URL" validate:"required,url"`
 }
 
-//------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------
 
-var SchemaJSON = `{
-	"$schema": "http://json-schema.org/draft-07/schema#",
-	"$id": "http://example.com/example.json",
-	"title": "Sample.",
-	"description": "This is a sample configuration settings.",
-	"type": "object",
-	"required": [
-		"name",
-		"integerValue",
-		"floatValue",
-		"server",
-		"node",
-		"mongodb"
-	],
-	"properties": {
-		"name": {
-			"$id": "#/properties/name",
-			"title": "name",
-			"description": "A random string value.",
-			"type": "string",
-			"minLength": 1
-		},
-		"integerValue": {
-			"$id": "#/properties/integerValue",
-			"title": "integerValue",
-			"description": "A random integer value.",
-			"type": "integer"
-		},
-		"floatValue": {
-			"$id": "#/properties/floatValue",
-			"title": "floatValue",
-			"description": "A random float value.",
-			"type": "number"
-		},
-		"server": {
-			"$id": "#/properties/server",
-			"title": "Server information",
-			"description": "Server parameters the application will mount.",
-			"type": "object",
-			"required": [
-				"ip",
-				"port"
-			],
-			"properties": {
-				"ip": {
-					"$id": "#/properties/server/properties/ip",
-					"title": "Bind address",
-					"description": "The bind address to listen for incoming connections.",
-					"type": "string",
-					"anyOf": [
-						{ "format": "ipv4" },
-						{ "format": "ipv6" }
-					],
-					"default": "127.0.0.1"
-				},
-				"port": {
-					"$id": "#/properties/server/properties/port",
-					"title": "Listen port",
-					"description": "The port to use to listen for incoming connections.",
-					"type": "integer",
-					"minimum": 0,
-					"maximum": 65535
-				}
-			}
-		},
+var GoodSettingsMap = map[string]interface{}{
+	"TEST_NAME":            "string test",
+	"TEST_INTEGER":         100,
+	"TEST_FLOAT":           100.3,
+	"TEST_SERVER_IP":       "127.0.0.1",
+	"TEST_SERVER_PORT":     "8001",
+	"TEST_SERVER_POOLSIZE": 64,
+	"TEST_SERVER_ALLOWED":  "[ \"127.0.0.1\", \"::1\" ]",
+	"TEST_NODE_URL":        "http://127.0.0.1:8003",
+	"TEST_NODE_APITOKEN":   "some-api-access-token",
+	"TEST_MONGODB_URL":     "mongodb://user:pass@127.0.0.1:27017/sample_database?replSet=rs0",
+}
 
-		"node": {
-			"$id": "#/properties/node",
-			"title": "Algorand's Node settings",
-			"description": "Indicates the connection settings to use to connect to Algorand's Node.",
-			"type": "object",
-			"required": [
-				"url",
-				"apiToken"
-			],
-			"properties": {
-				"url": {
-					"$id": "#/properties/node/properties/url",
-					"title": "Url",
-					"description": "Specifies the node URL.",
-					"type": "string",
-					"pattern": "^https?:\\/\\/([^:/?#]+)(\\:\\d+)$"
-				},
-				"apiToken": {
-					"$id": "#/properties/node/properties/apiToken",
-					"title": "API Access Token",
-					"description": "Specifies the access token to use.",
-					"type": "string",
-					"minLength": 1
-				}
-			}
-		},
+var BadSettingsMap = map[string]interface{}{
+	"TEST_NAME":            "string test",
+	"TEST_INTEGER":         100,
+	"TEST_FLOAT":           "abc",
+	"TEST_SERVER_IP":       "127.0.0.1.2",
+	"TEST_SERVER_PORT":     8001,
+	"TEST_SERVER_POOLSIZE": 64,
+	"TEST_SERVER_ALLOWED":  "[ \"127.0.0.1\", \"::1\" ]",
+	"TEST_NODE_url":        "http://127.0.0.1:8003",
+	"TEST_NODE_apiToken":   "some-api-access-token",
+	"TEST_MONGODB_URL":     "mongodb://user:pass@127.0.0.1:27017",
+}
 
-		"mongodb": {
-			"$id": "#/properties/mongodb",
-			"title": "MongoDB database settings",
-			"description": "Indicates the database connection settings to use.",
-			"type": "object",
-			"required": [
-				"url"
-			],
-			"properties": {
-				"url": {
-					"$id": "#/properties/mongodb/properties/url",
-					"title": "MongoDB connection URL",
-					"description": "Indicates the connection settings to use to connect to MongoDB.",
-					"type": "string",
-					"pattern": "^mongodb:\\/\\/(([^:@]*\\:[^@]*)@)?([^:/?#]+)(\\:\\d+)?(\/[a-zA-Z0-9_]*)\\?replSet\\=\\w+",
-					"examples": [
-						"mongodb://user:pass@127.0.0.1:27017/sample_database?replSet=rs0"
-					]
-				}
-			}
-		}
-	},
-
-	"additionalProperties": true
-}`
-
-var GoodSettingsJSON = `{
-	"name": "string test",
-	"integerValue": 100,
-	"floatValue": 100.3,
-
-	"server": {
-		"ip": "127.0.0.1",
-		"port": 8001,
-		"poolSize": 64,
-		"allowedAddresses": [
-			"127.0.0.1", "::1"
-		]
-	},
-
-	"node": {
-		"url": "http://127.0.0.1:8003",
-		"apiToken": "some-api-access-token"
-	},
-
-	"mongodb": {
-		"url": "mongodb://user:pass@127.0.0.1:27017/sample_database?replSet=rs0"
-	}
-}`
-
-var BadSettingsJSON = `{
-	"name": 1,
-	"integerValue": "100",
-	"floatValue": "100.3",
-
-	"server": {
-		"ip": "my_localhost",
-		"port": 8001,
-		"poolSize": 64
-	},
-
-	"node": {
-		"url": "http://127.0.0.1:8003",
-		"apiToken": "some-api-access-token"
-	},
-
-	"mongodb": {
-		"url": "mongodb://user:pass@127.0.0.1:27017"
-	}
-}`
+// ------------------------------------------------------------------------------
 
 var GoodSettings = TestSettings{
-	Name:         "string test",
-	IntegerValue: 100,
-	FloatValue:   100.3,
+	Name:              "string test",
+	PtrToName:         addressOf[string]("string test"),
+	IntegerValue:      100,
+	PtrToIntegerValue: addressOf[int](100),
+	FloatValue:        100.3,
+	PtrToFloatValue:   addressOf[float64](100.3),
 	Server: TestSettingsServer{
 		Ip:               "127.0.0.1",
 		Port:             8001,
 		PoolSize:         64,
 		AllowedAddresses: []string{"127.0.0.1", "::1"},
 	},
-	Node: TestSettingsNode{
+	Node: &TestSettingsNode{
 		Url:      "http://127.0.0.1:8003",
 		ApiToken: "some-api-access-token",
 	},
 	MongoDB: TestSettingsMongoDB{
 		Url: "mongodb://user:pass@127.0.0.1:27017/sample_database?replSet=rs0",
 	},
+}
+
+// ------------------------------------------------------------------------------
+
+func ToStringStringMap(srcMap map[string]interface{}) map[string]string {
+	dstMap := make(map[string]string)
+	for k, v := range srcMap {
+		switch _v := v.(type) {
+		case string:
+			dstMap[k] = _v
+		case float32:
+			dstMap[k] = fmt.Sprintf("%f", _v)
+		case float64:
+			dstMap[k] = fmt.Sprintf("%f", _v)
+		default:
+			dstMap[k] = fmt.Sprintf("%v", _v)
+		}
+	}
+	return dstMap
+}
+
+func QuoteValue(v string) string {
+	if strings.IndexAny(v, " \t'\"") < 0 {
+		return v
+	}
+	return strconv.Quote(v)
+}
+
+func ToKeys(srcMap map[string]interface{}) []string {
+	dst := make([]string, 0)
+	for k := range srcMap {
+		dst = append(dst, k)
+	}
+	return dst
+}
+
+// ------------------------------------------------------------------------------
+
+func addressOf[T any](v T) *T {
+	return &v
 }

@@ -4,25 +4,28 @@ The following loaders are available as sources of configuration settings.
 
 ### Memory
 
+Creates a loader from a value stored in memory.
+
 ```golang
 loader.NewMemory()
 loader.NewMemoryFromEnvironmentVariable(Name string)
 ```
 
-Creates a loader from a value stored in memory. Available loader options:
+Available loader options:
 
 | Method     | Description                                         |
 |------------|-----------------------------------------------------|
 | `WithData` | Sets the data to return when the content is loaded. |
 
-
 ### Callback
+
+Creates a loader which calls a callback function which, in turn, returns some content.
 
 ```golang
 loader.NewCallback()
 ```
 
-Creates a loader which calls a callback function which, in turn, returns some content. Available loader options:
+Available loader options:
 
 | Method         | Description                 |
 |----------------|-----------------------------|
@@ -30,13 +33,16 @@ Creates a loader which calls a callback function which, in turn, returns some co
 
 ### File
 
+Creates a loader that reads data from a file. Data can be in [DotEnv](https://www.dotenv.org/docs/security/env) format
+or [JSON](https://www.json.org/).
+
 ```golang
 loader.NewFile()
 loader.NewFileFromCommandLine(CmdLineParameter *string, CmdLineParameterShort *string)
 loader.NewFileFromEnvironmentVariable(Name string)
 ```
 
-Creates a loader that reads data from a file. Available loader options:
+Available loader options:
 
 | Method         | Description        |
 |----------------|--------------------|
@@ -44,11 +50,13 @@ Creates a loader that reads data from a file. Available loader options:
 
 ### Http
 
+Creates a loader that reads data from a website. Like the file loader, data can be in DotEnv or JSON format.
+
 ```golang
 loader.NewHttp()
 ```
 
-Creates a loader that reads data from a website. Available loader options:
+Available loader options:
 
 | Method            | Description                                      |
 |-------------------|--------------------------------------------------|
@@ -65,11 +73,13 @@ Creates a loader that reads data from a website. Available loader options:
 
 ### Vault
 
+Creates a loader that reads data from [Hashicorp Vault](https://www.vaultproject.io/).
+
 ```golang
 loader.NewVault()
 ```
 
-Creates a loader that reads data from [Hashicorp Vault](https://www.vaultproject.io/). Available loader options:
+Available loader options:
 
 | Method            | Description                                      |
 |-------------------|--------------------------------------------------|

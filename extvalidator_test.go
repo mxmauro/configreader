@@ -7,21 +7,24 @@ import (
 
 	"github.com/mxmauro/configreader"
 	"github.com/mxmauro/configreader/loader"
+	"github.com/mxmauro/configreader/model"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 var ExtendedValidatorValueError = errors.New("value must be greater than 0")
 
 type ExtendedValidatorTest struct {
-	Value int `json:"value"`
+	Value int `config:"TEST_VALUE"`
 }
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func TestValidExtendedValidator(t *testing.T) {
 	// Load configuration
-	err := testExtendedValidatorCommon(`{ "value": 1 }`)
+	err := testExtendedValidatorCommon(model.Values{
+		"TEST_VALUE": 1,
+	})
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -29,7 +32,9 @@ func TestValidExtendedValidator(t *testing.T) {
 
 func TestInvalidExtendedValidator(t *testing.T) {
 	// Load configuration
-	err := testExtendedValidatorCommon(`{ "value": 0 }`)
+	err := testExtendedValidatorCommon(model.Values{
+		"TEST_VALUE": 0,
+	})
 	if err == nil {
 		t.Fatalf("unexpected success")
 	} else if !errors.Is(err, ExtendedValidatorValueError) {
@@ -37,7 +42,9 @@ func TestInvalidExtendedValidator(t *testing.T) {
 	}
 }
 
-func testExtendedValidatorCommon(data string) error {
+// -----------------------------------------------------------------------------
+
+func testExtendedValidatorCommon(data model.Values) error {
 	_, err := configreader.New[ExtendedValidatorTest]().
 		WithLoader(loader.NewMemory().WithData(data)).
 		WithExtendedValidator(func(settings *ExtendedValidatorTest) error {

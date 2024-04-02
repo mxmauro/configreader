@@ -1,12 +1,10 @@
 package loader
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/hashicorp/vault/api"
 	"github.com/mxmauro/configreader/internal/helpers"
+	"github.com/mxmauro/configreader/model"
 )
 
 // -----------------------------------------------------------------------------
@@ -56,7 +55,7 @@ func NewVault() *Vault {
 // WithHost sets the host address and, optionally, the port
 func (l *Vault) WithHost(host string) *Vault {
 	if l.err == nil {
-		host, l.err = helpers.LoadAndReplaceEnvs(host)
+		host, l.err = helpers.ExpandEnvVars(host)
 		if l.err == nil {
 			l.host = host
 		}
@@ -67,7 +66,7 @@ func (l *Vault) WithHost(host string) *Vault {
 // WithPath sets the path
 func (l *Vault) WithPath(path string) *Vault {
 	if l.err == nil {
-		path, l.err = helpers.LoadAndReplaceEnvs(path)
+		path, l.err = helpers.ExpandEnvVars(path)
 		if l.err == nil {
 			if !strings.HasPrefix(path, "/") {
 				path = "/" + path
@@ -90,7 +89,7 @@ func (l *Vault) WithHeaders(headers map[string]string) *Vault {
 				break
 			}
 
-			value, err = helpers.LoadAndReplaceEnvs(value)
+			value, err = helpers.ExpandEnvVars(value)
 			if err != nil {
 				break
 			}
@@ -114,7 +113,7 @@ func (l *Vault) WithHeaderItem(key string, value string) *Vault {
 	if l.err == nil {
 		var err error
 
-		value, err = helpers.LoadAndReplaceEnvs(value)
+		value, err = helpers.ExpandEnvVars(value)
 		if err == nil {
 			if l.headers == nil {
 				l.headers = make(map[string]string)
@@ -339,9 +338,9 @@ func (l *Vault) WithURL(rawURL string) *Vault {
 }
 
 // Load loads the content from Vault
-func (l *Vault) Load(ctx context.Context) ([]byte, error) {
+func (l *Vault) Load(ctx context.Context) (model.Values, error) {
 	var secret *api.Secret
-	var buf bytes.Buffer
+	var ret model.Values
 	var err error
 
 	if l.err != nil {
@@ -377,17 +376,19 @@ func (l *Vault) Load(ctx context.Context) ([]byte, error) {
 		return nil, errors.New("data not found")
 	}
 
-	// Re-encode all as the original received json
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	err = enc.Encode(data)
-	if err != nil {
-		return nil, err
+	ret, ok = data.(map[string]interface{}) // Using 'map[string]interface{}' instead of model.Values else casting won't work
+	if !ok {
+		return nil, errors.New("secret engine is not K/V")
+	}
+	if ret == nil {
+		ret = make(model.Values)
 	}
 
 	// Done
-	return buf.Bytes(), nil
+	return ret, nil
 }
+
+// -----------------------------------------------------------------------------
 
 func parsePathParam(values []string) []string {
 	// No path? Error
@@ -420,9 +421,9 @@ func parsePathParam(values []string) []string {
 		}
 
 		// Ignore duplicate path
-		hasher := sha256.New()
-		_, _ = hasher.Write([]byte(value))
-		hash := hex.EncodeToString(hasher.Sum(nil))
+		h := sha256.New()
+		_, _ = h.Write([]byte(value))
+		hash := hex.EncodeToString(h.Sum(nil))
 		if _, ok := keyCheckMap[hash]; ok {
 			continue
 		}

@@ -10,13 +10,12 @@ import (
 	"github.com/mxmauro/configreader/loader"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func TestWellFormedWithSchema(t *testing.T) {
 	// Load configuration
 	settings, err := configreader.New[testhelpers.TestSettings]().
-		WithLoader(loader.NewMemory().WithData(testhelpers.GoodSettingsJSON)).
-		WithSchema(testhelpers.SchemaJSON).
+		WithLoader(loader.NewMemory().WithData(testhelpers.GoodSettingsMap)).
 		Load(context.Background())
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -30,8 +29,7 @@ func TestWellFormedWithSchema(t *testing.T) {
 func TestMalformedWithSchema(t *testing.T) {
 	// Load configuration
 	_, err := configreader.New[testhelpers.TestSettings]().
-		WithLoader(loader.NewMemory().WithData(testhelpers.BadSettingsJSON)).
-		WithSchema(testhelpers.SchemaJSON).
+		WithLoader(loader.NewMemory().WithData(testhelpers.BadSettingsMap)).
 		Load(context.Background())
 	if err == nil {
 		t.Fatalf("unexpected success")

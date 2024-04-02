@@ -49,7 +49,7 @@ func NewVaultAwsAuthMethod() *VaultAwsAuth {
 // WithRole sets the role
 func (a *VaultAwsAuth) WithRole(role string) *VaultAwsAuth {
 	if a.err == nil {
-		role, a.err = helpers.LoadAndReplaceEnvs(role)
+		role, a.err = helpers.ExpandEnvVars(role)
 		if a.err == nil {
 			a.role = role
 		}
@@ -94,7 +94,7 @@ func (a *VaultAwsAuth) WithTypeEC2() *VaultAwsAuth {
 // WithIamServerID sets the server id header when authenticating as IAM
 func (a *VaultAwsAuth) WithIamServerID(id string) *VaultAwsAuth {
 	if a.err == nil {
-		id, a.err = helpers.LoadAndReplaceEnvs(id)
+		id, a.err = helpers.ExpandEnvVars(id)
 		if a.err == nil {
 			a.serverIdHdr = id
 		}
@@ -148,7 +148,7 @@ func (a *VaultAwsAuth) WithRSA2048Signature() *VaultAwsAuth {
 // WithNonce sets nonce to use. Defaults to generate a random uuid
 func (a *VaultAwsAuth) WithNonce(nonce string) *VaultAwsAuth {
 	if a.err == nil {
-		nonce, a.err = helpers.LoadAndReplaceEnvs(nonce)
+		nonce, a.err = helpers.ExpandEnvVars(nonce)
 		if a.err == nil {
 			a.nonce = nonce
 		}
@@ -159,7 +159,7 @@ func (a *VaultAwsAuth) WithNonce(nonce string) *VaultAwsAuth {
 // WithRegion sets the region to use. Defaults to us-east-1
 func (a *VaultAwsAuth) WithRegion(region string) *VaultAwsAuth {
 	if a.err == nil {
-		region, a.err = helpers.LoadAndReplaceEnvs(region)
+		region, a.err = helpers.ExpandEnvVars(region)
 		if a.err == nil {
 			a.region = region
 		}
@@ -170,7 +170,7 @@ func (a *VaultAwsAuth) WithRegion(region string) *VaultAwsAuth {
 // WithMountPath sets an optional mount path. Defaults to aws
 func (a *VaultAwsAuth) WithMountPath(mountPath string) *VaultAwsAuth {
 	if a.err == nil {
-		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		mountPath, a.err = helpers.ExpandEnvVars(mountPath)
 		if a.err == nil {
 			a.mountPath = mountPath
 		}

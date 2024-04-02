@@ -10,7 +10,7 @@ import (
 	"github.com/mxmauro/configreader/loader"
 )
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 func TestVaultLoaderWithAppRoleAuth(t *testing.T) {
 	// Check if vault is running
@@ -20,7 +20,7 @@ func TestVaultLoaderWithAppRoleAuth(t *testing.T) {
 	client := testhelpers.CreateRootVaultClient(t, vaultAddr)
 
 	// Write the secrets
-	testhelpers.WriteVaultSecret(t, client, "settings", testhelpers.GoodSettingsJSON)
+	testhelpers.WriteVaultSecrets(t, client, "settings", testhelpers.GoodSettingsMap)
 
 	// Add AppRole auth engine
 	testhelpers.EnableAppRoleAuthEngine(t, client)
@@ -38,7 +38,6 @@ func TestVaultLoaderWithAppRoleAuth(t *testing.T) {
 			WithAuth(loader.NewVaultAppRoleAuthMethod().
 				WithRoleId(roleId).
 				WithSecretId(secretId))).
-		WithSchema(testhelpers.SchemaJSON).
 		Load(context.Background())
 	if err != nil {
 		t.Fatalf(err.Error())

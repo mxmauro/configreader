@@ -31,7 +31,7 @@ func NewVaultAppRoleAuthMethod() *VaultAppRoleAuth {
 // WithRoleId sets the role id
 func (a *VaultAppRoleAuth) WithRoleId(roleId string) *VaultAppRoleAuth {
 	if a.err == nil {
-		roleId, a.err = helpers.LoadAndReplaceEnvs(roleId)
+		roleId, a.err = helpers.ExpandEnvVars(roleId)
 		if a.err == nil {
 			a.roleId = roleId
 		}
@@ -42,7 +42,7 @@ func (a *VaultAppRoleAuth) WithRoleId(roleId string) *VaultAppRoleAuth {
 // WithSecretId sets the secret id
 func (a *VaultAppRoleAuth) WithSecretId(secretId string) *VaultAppRoleAuth {
 	if a.err == nil {
-		secretId, a.err = helpers.LoadAndReplaceEnvs(secretId)
+		secretId, a.err = helpers.ExpandEnvVars(secretId)
 		if a.err == nil {
 			a.secretId = secretId
 		}
@@ -68,7 +68,7 @@ func (a *VaultAppRoleAuth) WithSecretUnwrap(unwrap interface{}) *VaultAppRoleAut
 // WithMountPath sets an optional mount path. Defaults to approle
 func (a *VaultAppRoleAuth) WithMountPath(mountPath string) *VaultAppRoleAuth {
 	if a.err == nil {
-		mountPath, a.err = helpers.LoadAndReplaceEnvs(mountPath)
+		mountPath, a.err = helpers.ExpandEnvVars(mountPath)
 		if a.err == nil {
 			a.mountPath = mountPath
 		}
