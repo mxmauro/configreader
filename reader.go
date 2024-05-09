@@ -121,26 +121,26 @@ func (cr *ConfigReader[T]) load(ctx context.Context) (*T, [64]byte, error) {
 	// Load the whole data
 	values, err := cr.loadValues(ctx)
 	if err != nil {
-		return nil, hash, newConfigLoadError(err)
+		return nil, hash, err
 	}
 
 	// Decode settings
 	settings := new(T)
 	err = cr.fillFields(settings, values)
 	if err != nil {
-		return nil, hash, newConfigLoadError(err)
+		return nil, hash, err
 	}
 
 	// Validate settings
 	err = cr.validate(settings)
 	if err != nil {
-		return nil, hash, newConfigLoadError(err)
+		return nil, hash, err
 	}
 
 	// Calculate hash
 	hash, err = cr.calcHash(settings)
 	if err != nil {
-		return nil, hash, newConfigLoadError(err)
+		return nil, hash, err
 	}
 
 	// Done

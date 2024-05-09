@@ -14,7 +14,7 @@ import (
 type AutoDetectOptions struct {
 	// CmdLine specifies if command line parameters are checked in first place
 	CmdLine struct {
-		Check bool
+		Skip bool
 		// Long is the long version of the command line parameter. Defaults to --settings
 		Long string
 		// Short is the short version of the command line parameter. Defaults to -S
@@ -42,11 +42,11 @@ func NewAutoDetect(opts AutoDetectOptions) model.Loader {
 	location := ""
 
 	// Try to get the location from the command line options
-	if opts.CmdLine.Check {
+	if !opts.CmdLine.Skip {
 		var errParam string
 
-		longOpt := "--settings"
-		shortOpt := "-S"
+		longOpt := "settings"
+		shortOpt := "S"
 		if len(opts.CmdLine.Long) > 0 || len(opts.CmdLine.Short) > 0 {
 			longOpt = opts.CmdLine.Long
 			shortOpt = opts.CmdLine.Short
@@ -115,7 +115,7 @@ func NewAutoDetect(opts AutoDetectOptions) model.Loader {
 		for ofs < len(location) && location[ofs] == '/' {
 			ofs += 1
 		}
-		location = "file:" + strings.Repeat("/", fileSlashesCount) + location[ofs:]
+		location = location[ofs:]
 	}
 
 	loader := NewFile()

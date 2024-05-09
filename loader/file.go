@@ -32,8 +32,8 @@ func NewFileFromCommandLine(CmdLineParameter *string, CmdLineParameterShort *str
 	l := &File{}
 
 	// Setup command-line parameters to look for.
-	longOpt := "--settings"
-	shortOpt := "-S"
+	longOpt := "settings"
+	shortOpt := "S"
 
 	if CmdLineParameter != nil {
 		longOpt = *CmdLineParameter

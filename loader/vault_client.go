@@ -123,7 +123,7 @@ func newVaultClient(host string, headers map[string]string, tlsConfig *tls.Confi
 	// Set provided access token (maybe none)
 	client.apiClient.SetToken(accessToken)
 	// Remove some settings that can be overridden with environment variables
-	client.apiClient.SetNamespace("")
+	client.apiClient.ClearNamespace()
 
 	// Add custom headers if provided
 	if len(headers) > 0 {

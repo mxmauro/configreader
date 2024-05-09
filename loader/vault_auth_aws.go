@@ -202,6 +202,7 @@ func (a *VaultAwsAuth) create() (api.AuthMethod, error) {
 	case VaultAwsAuthTypeEC2:
 		opts = append(opts, aws.WithEC2Auth())
 	}
+
 	switch a.signature {
 	case VaultAwsAuthSignatureIdentity:
 		opts = append(opts, aws.WithIdentitySignature())

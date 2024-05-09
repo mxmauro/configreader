@@ -2,9 +2,7 @@ package loader
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
@@ -23,7 +21,7 @@ import (
 // Vault wraps content to be loaded from a Hashicorp Vault instance
 type Vault struct {
 	host string
-	path string
+	path []string
 
 	headers map[string]string
 
@@ -42,6 +40,12 @@ type VaultAuthMethod interface {
 	create() (api.AuthMethod, error)
 	hash() [32]byte
 }
+
+// -----------------------------------------------------------------------------
+
+var (
+	regexMultipleSlashes = regexp.MustCompile(`/+`)
+)
 
 // -----------------------------------------------------------------------------
 
@@ -66,12 +70,42 @@ func (l *Vault) WithHost(host string) *Vault {
 // WithPath sets the path
 func (l *Vault) WithPath(path string) *Vault {
 	if l.err == nil {
+		l.path = make([]string, 0)
+		l.AddPath(path)
+	}
+	return l
+}
+
+// AddPath adds a new path to the list
+func (l *Vault) AddPath(path string) *Vault {
+	if l.err == nil {
 		path, l.err = helpers.ExpandEnvVars(path)
 		if l.err == nil {
-			if !strings.HasPrefix(path, "/") {
-				path = "/" + path
+			path = strings.Replace(path, "\\", "/", -1)
+			path = regexMultipleSlashes.ReplaceAllString(path, "/")
+			if strings.HasPrefix(path, "/") {
+				path = path[1:]
 			}
-			l.path = path
+			if strings.HasSuffix(path, "/") {
+				path = path[:len(path)-1]
+			}
+			if len(path) > 0 {
+				ignore := false
+				for _, p := range l.path {
+					if p == path {
+						ignore = true
+						break
+					}
+				}
+				if !ignore {
+					if l.path == nil {
+						l.path = make([]string, 0)
+					}
+					l.path = append(l.path, path)
+				}
+			} else {
+				l.err = errors.New("invalid path")
+			}
 		}
 	}
 	return l
@@ -195,27 +229,30 @@ func (l *Vault) WithURL(rawURL string) *Vault {
 
 		_ = l.WithPath(u.Path)
 
-		query := u.Query()
-
 		// Get and validate path locations to read
-		locations := parsePathParam(query["path"])
-		if len(locations) == 0 {
+		for _, p := range findQueryValues(u, "path") {
+			_ = l.AddPath(p)
+		}
+		if l.err != nil {
+			return l
+		}
+		if len(l.path) == 0 {
 			l.err = errors.New("invalid Vault url (path not specified or invalid)")
 			return l
 		}
 
 		// Figure out the auth login mount path
-		mountPath := query.Get("mountPath")
+		mountPath := findFirstQueryValue(u, "mountPath")
 
 		// Check if a role name was provided
-		roleName := query.Get("roleName")
+		roleName := findFirstQueryValue(u, "roleName")
 
 		// Check if AppRole credentials were provided (both or none must be specified)
-		roleID := query.Get("roleId")
-		secretID := query.Get("secretId")
+		roleID := findFirstQueryValue(u, "roleId")
+		secretID := findFirstQueryValue(u, "secretId")
 
 		// Determine the auth method (or autodetect)
-		method := query.Get("method")
+		method := findFirstQueryValue(u, "method")
 		if len(method) > 0 {
 			if method != "approle" && method != "iam" && method != "k8s" {
 				l.err = errors.New("invalid Vault url (method not supported)")
@@ -227,7 +264,7 @@ func (l *Vault) WithURL(rawURL string) *Vault {
 				method = "approle"
 			} else if len(os.Getenv("KUBERNETES_SERVICE_HOST")) > 0 {
 				method = "k8s"
-			} else if len(os.Getenv("EC2_INSTANCE_ID")) > 0 || len(os.Getenv("ECS_CONTAINER_METADATA_URI_V4")) > 0 {
+			} else if len(os.Getenv("EC2_INSTANCE_ID")) > 0 || len(os.Getenv("ECS_CONTAINER_METADATA_URI_V4")) > 0 || len(os.Getenv("AWS_ROLE_ARN")) > 0 || len(os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE")) > 0 {
 				method = "iam"
 			} else {
 				var req *http.Request
@@ -272,16 +309,16 @@ func (l *Vault) WithURL(rawURL string) *Vault {
 
 			auth := NewVaultAppRoleAuthMethod()
 
-			auth.WithRoleId(roleID)
-			auth.WithSecretId(secretID)
+			_ = auth.WithRoleId(roleID)
+			_ = auth.WithSecretId(secretID)
 
 			if len(mountPath) > 0 {
-				auth.WithMountPath(mountPath)
+				_ = auth.WithMountPath(mountPath)
 			} else {
-				auth.WithMountPath("approle")
+				_ = auth.WithMountPath("approle")
 			}
 
-			l.WithAuth(auth)
+			_ = l.WithAuth(auth)
 
 		case "k8s":
 			if len(roleName) == 0 {
@@ -291,15 +328,15 @@ func (l *Vault) WithURL(rawURL string) *Vault {
 
 			auth := NewVaultKubernetesAuthMethod()
 
-			auth.WithRole(roleName)
+			_ = auth.WithRole(roleName)
 
 			if len(mountPath) > 0 {
-				auth.WithMountPath(mountPath)
+				_ = auth.WithMountPath(mountPath)
 			} else {
-				auth.WithMountPath("kubernetes")
+				_ = auth.WithMountPath("kubernetes")
 			}
 
-			l.WithAuth(auth)
+			_ = l.WithAuth(auth)
 
 		case "iam":
 			if len(roleName) == 0 {
@@ -309,27 +346,27 @@ func (l *Vault) WithURL(rawURL string) *Vault {
 
 			auth := NewVaultAwsAuthMethod()
 
-			auth.WithRole(roleName)
+			_ = auth.WithRole(roleName)
 
-			auth.WithTypeIAM()
+			_ = auth.WithTypeIAM()
 
-			serverId := query.Get("serverId")
+			serverId := findFirstQueryValue(u, "serverId")
 			if len(serverId) > 0 {
-				auth.WithIamServerID(serverId)
+				_ = auth.WithIamServerID(serverId)
 			}
 
-			region := query.Get("region")
+			region := findFirstQueryValue(u, "region")
 			if len(region) > 0 {
-				auth.WithRegion(region)
+				_ = auth.WithRegion(region)
 			}
 
 			if len(mountPath) > 0 {
-				auth.WithMountPath(mountPath)
+				_ = auth.WithMountPath(mountPath)
 			} else {
-				auth.WithMountPath("aws")
+				_ = auth.WithMountPath("aws")
 			}
 
-			l.WithAuth(auth)
+			_ = l.WithAuth(auth)
 		}
 	}
 
@@ -359,29 +396,32 @@ func (l *Vault) Load(ctx context.Context) (model.Values, error) {
 		}
 	}
 
-	// Read secret
-	secret, err = l.client.readWithContext(ctx, l.path)
-	if err != nil {
-		return nil, err
-	}
+	// Read secrets
+	ret = make(model.Values)
+	for _, p := range l.path {
+		secret, err = l.client.readWithContext(ctx, p)
+		if err != nil {
+			return nil, err
+		}
 
-	// If we don't have a secret but also no errors
-	if secret == nil {
-		return nil, errors.New("data not found")
-	}
+		// If we don't have a secret but also no errors, skip
+		if secret != nil {
+			// Extract data
+			values := secret.Data
+			if data, ok := values["data"]; ok && data != nil {
+				_values, ok2 := data.(map[string]interface{}) // Using 'map[string]interface{}' instead of model.Values else casting won't work
+				if ok2 {
+					values = _values
+				} else {
+					values = nil
+				}
+			}
 
-	// Extract data and re-encode as JSON
-	data, ok := secret.Data["data"]
-	if !ok || data == nil {
-		return nil, errors.New("data not found")
-	}
-
-	ret, ok = data.(map[string]interface{}) // Using 'map[string]interface{}' instead of model.Values else casting won't work
-	if !ok {
-		return nil, errors.New("secret engine is not K/V")
-	}
-	if ret == nil {
-		ret = make(model.Values)
+			// Merge
+			for k, v := range values {
+				ret[k] = v
+			}
+		}
 	}
 
 	// Done
@@ -390,49 +430,19 @@ func (l *Vault) Load(ctx context.Context) (model.Values, error) {
 
 // -----------------------------------------------------------------------------
 
-func parsePathParam(values []string) []string {
-	// No path? Error
-	if len(values) == 0 {
-		return nil
+func findQueryValues(u *url.URL, param string) []string {
+	for k, values := range u.Query() {
+		if strings.EqualFold(k, param) {
+			return values
+		}
 	}
+	return nil
+}
 
-	multiSlashRegex := regexp.MustCompile(`/+`)
-
-	finalPaths := make([]string, 0)
-	keyCheckMap := make(map[string]struct{})
-
-	for _, value := range values {
-		value = strings.Replace(value, "\\", "/", -1)
-		value = multiSlashRegex.ReplaceAllString(value, "/")
-
-		// Path does not start with a slash? Error
-		if !strings.HasPrefix(value, "/") {
-			return nil
-		}
-
-		// Path ends with a slash? Remove it
-		if strings.HasSuffix(value, "/") {
-			value = value[:len(value)-1]
-		}
-
-		// Path is empty or root? Error
-		if len(value) == 0 || value == "/" {
-			return nil
-		}
-
-		// Ignore duplicate path
-		h := sha256.New()
-		_, _ = h.Write([]byte(value))
-		hash := hex.EncodeToString(h.Sum(nil))
-		if _, ok := keyCheckMap[hash]; ok {
-			continue
-		}
-		keyCheckMap[hash] = struct{}{}
-
-		// Add this path
-		finalPaths = append(finalPaths, value)
+func findFirstQueryValue(u *url.URL, param string) string {
+	values := findQueryValues(u, param)
+	if len(values) > 0 {
+		return values[0]
 	}
-
-	// Done
-	return finalPaths
+	return ""
 }
