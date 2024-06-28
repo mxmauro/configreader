@@ -26,7 +26,7 @@ type ConfigReader[T any] struct {
 }
 
 // ExtendedValidator is a function to call in order to do configuration validation not covered by this library.
-type ExtendedValidator[T any] func(settings *T) error
+type ExtendedValidator[T any] func(ctx context.Context, settings *T) error
 
 // SettingsChangedCallback is a function to call when the re-loader detects a change in the configuration settings.
 type SettingsChangedCallback[T any] func(settings *T, loadErr error)
@@ -132,7 +132,7 @@ func (cr *ConfigReader[T]) load(ctx context.Context) (*T, [64]byte, error) {
 	}
 
 	// Validate settings
-	err = cr.validate(settings)
+	err = cr.validate(ctx, settings)
 	if err != nil {
 		return nil, hash, err
 	}

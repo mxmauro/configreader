@@ -182,6 +182,10 @@ func ToInt(v interface{}, bitSize int) (value int64, isNil bool, overflow bool, 
 		fallthrough
 	case reflect.Int64:
 		value = rV.Int()
+		if OverflowCheckInt64(rV.Type(), value) {
+			overflow = true
+			return
+		}
 
 	case reflect.Uint:
 		fallthrough
@@ -195,7 +199,7 @@ func ToInt(v interface{}, bitSize int) (value int64, isNil bool, overflow bool, 
 		fallthrough
 	case reflect.Uintptr:
 		valU := rV.Uint()
-		if valU > uint64(math.MaxInt64) {
+		if OverflowCheckUint64(rV.Type(), valU) {
 			overflow = true
 			return
 		}
@@ -262,7 +266,7 @@ func ToUint(v interface{}, bitSize int) (value uint64, isNil bool, overflow bool
 		fallthrough
 	case reflect.Int64:
 		valI := rV.Int()
-		if valI < 0 {
+		if OverflowCheckInt64(rV.Type(), valI) {
 			overflow = true
 			return
 		}
@@ -280,12 +284,16 @@ func ToUint(v interface{}, bitSize int) (value uint64, isNil bool, overflow bool
 		fallthrough
 	case reflect.Uintptr:
 		value = rV.Uint()
+		if OverflowCheckUint64(rV.Type(), value) {
+			overflow = true
+			return
+		}
 
 	case reflect.Float32:
 		fallthrough
 	case reflect.Float64:
 		f := rV.Float()
-		if f < 0.0000001 || f > float64(math.MaxUint64) {
+		if f < -0.0000001 || f > float64(math.MaxUint64) {
 			overflow = true
 			return
 		}

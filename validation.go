@@ -1,51 +1,18 @@
 package configreader
 
 import (
+	"context"
 	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/go-playground/validator/v10"
 )
 
 // -----------------------------------------------------------------------------
 
-// ValidationError represents a set of ValidationErrorFailure.
-type ValidationError struct {
-	Failures []ValidationErrorFailure
-}
-
-// ValidationErrorFailure represents a specific JSON schema validation error.
-type ValidationErrorFailure struct {
-	Field string
-	Tag   string
-}
-
-// -----------------------------------------------------------------------------
-
-func (e *ValidationError) Error() string {
-	sb := strings.Builder{}
-	_, _ = sb.WriteString("validation failed")
-	for idx := range e.Failures {
-		_, _ = sb.WriteString(fmt.Sprintf(" [%d:%s]", idx+1, e.Failures[idx].Error()))
-	}
-	return sb.String()
-}
-
-func (*ValidationError) Unwrap() error {
-	return nil
-}
-
-func (e *ValidationErrorFailure) Error() string {
-	return fmt.Sprintf("unable to validate '%s' on field '%s'", e.Tag, e.Field)
-}
-
-// -----------------------------------------------------------------------------
-
-func (cr *ConfigReader[T]) validate(settings *T) error {
+func (cr *ConfigReader[T]) validate(ctx context.Context, settings *T) error {
 	// Execute validation
 	validate := validator.New(validator.WithRequiredStructEnabled())
-	err := validate.Struct(settings)
+	err := validate.StructCtx(ctx, settings)
 	if err != nil {
 		var validationErr validator.ValidationErrors
 
@@ -57,7 +24,7 @@ func (cr *ConfigReader[T]) validate(settings *T) error {
 
 	// Execute the extended validation if one was specified
 	if cr.extendedValidator != nil {
-		err = cr.extendedValidator(settings)
+		err = cr.extendedValidator(ctx, settings)
 		if err != nil {
 			return err
 		}
